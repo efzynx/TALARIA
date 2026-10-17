@@ -86,7 +86,7 @@ class SessionsScreen extends ConsumerWidget {
       final result = await ref.read(sessionProvider.notifier).resumeSession(session.id);
       final runtimeId = result['session_id'] as String? ?? session.id;
       final rawMessages = result['messages'] as List? ?? [];
-      ref.read(chatProvider.notifier).loadResumedSession(runtimeId, rawMessages);
+      ref.read(chatProvider.notifier).loadResumedSession(runtimeId, rawMessages, title: session.title);
       ref.read(activeTabProvider.notifier).state = 0;
 
       if (context.mounted) {

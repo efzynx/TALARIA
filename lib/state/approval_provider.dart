@@ -46,17 +46,27 @@ class ApprovalNotifier extends StateNotifier<ApprovalState> {
   }
 
   void _onNotificationReceived(JsonRpcNotification notification) {
-    if (notification.method == 'approval.pending') {
-      final params = notification.params;
-      if (params is Map<String, dynamic>) {
-        final request = ApprovalRequest.fromJson(params);
-        _addApproval(request);
-      }
-    } else if (notification.method == 'approval.settled' ||
-        notification.method == 'approval.resolved' ||
-        notification.method == 'approval.cancelled') {
-      final approvalId = notification.params?['approval_id'] as String? ??
-          notification.params?['id'] as String?;
+    final String type;
+    final Map<String, dynamic> params;
+
+    if (notification.method == 'event' && notification.params is Map) {
+      final p = Map<String, dynamic>.from(notification.params as Map);
+      type = p['type']?.toString() ?? '';
+      params = p['payload'] is Map ? Map<String, dynamic>.from(p['payload'] as Map) : p;
+    } else {
+      type = notification.method;
+      params = notification.params is Map ? Map<String, dynamic>.from(notification.params as Map) : {};
+    }
+
+    if (type == 'approval.pending' || type == 'approval' || type == 'request.opened') {
+      final request = ApprovalRequest.fromJson(params);
+      _addApproval(request);
+    } else if (type == 'approval.settled' ||
+        type == 'approval.resolved' ||
+        type == 'approval.cancelled' ||
+        type == 'request.cancel') {
+      final approvalId = params['approval_id']?.toString() ??
+          params['id']?.toString();
       if (approvalId != null) {
         _removeApproval(approvalId);
       }
