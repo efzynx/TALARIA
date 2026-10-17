@@ -3,16 +3,22 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../../../core/network/connection_status.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/haptics.dart';
 import '../../../data/models/chat_message.dart';
 import '../../../data/models/slash_command.dart';
+import '../../../state/account_provider.dart';
 import '../../../state/approval_provider.dart';
 import '../../../state/chat_provider.dart';
+import '../../../state/connection_provider.dart';
 import '../../../state/model_provider.dart';
 import '../../../state/skills_provider.dart';
+import '../../widgets/account_switcher_dialog.dart';
 import '../../widgets/approval_sheet.dart';
+import '../../widgets/login_dialog.dart';
+import '../../widgets/onboarding_welcome_dialog.dart';
 import '../../widgets/tool_accordion.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -747,6 +753,164 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildEmptyState() {
+    final conn = ref.watch(connectionProvider);
+    final accountState = ref.watch(accountProvider);
+    final activeAccount = accountState.activeAccount;
+
+    // 1. Unauthorized / Gated Mode (e.g. 0.0.0.0) -> Show Sign In First Card
+    if (conn.status == ConnectionStatus.unauthorized) {
+      return Center(
+        child: Container(
+          width: 380,
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: AppSpacing.roundedMd,
+            border: Border.all(color: AppColors.warn, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.warn.withAlpha(20),
+                blurRadius: 16,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warn.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(LucideIcons.lock, size: 28, color: AppColors.warn),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Authentication Required',
+                style: AppTypography.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.warn,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'This Hermes daemon (${conn.serverUrl}) requires credentials (e.g. basic_auth on 0.0.0.0). Sign in to activate your session.',
+                textAlign: TextAlign.center,
+                style: AppTypography.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () {
+                  AppHaptics.light();
+                  LoginDialog.show(context, initialServerUrl: conn.serverUrl);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.warn,
+                  foregroundColor: AppColors.background,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: const RoundedRectangleBorder(borderRadius: AppSpacing.roundedSm),
+                ),
+                icon: const Icon(LucideIcons.keyRound, size: 16),
+                label: Text(
+                  'Sign In with Username & Password',
+                  style: AppTypography.mono(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 2. Disconnected / First Install / No Daemon Running
+    if (conn.status == ConnectionStatus.disconnected && activeAccount?.hasToken != true) {
+      return Center(
+        child: Container(
+          width: 380,
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: AppSpacing.roundedMd,
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withAlpha(25),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(LucideIcons.plugZap, size: 28, color: AppColors.primary),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'No Connection Detected',
+                style: AppTypography.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Connect to a local or remote Hermes daemon (localhost, 0.0.0.0, LAN, or VPS) to command autonomous agents.',
+                textAlign: TextAlign.center,
+                style: AppTypography.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      AppHaptics.light();
+                      OnboardingWelcomeDialog.show(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.background,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      shape: const RoundedRectangleBorder(borderRadius: AppSpacing.roundedSm),
+                    ),
+                    icon: const Icon(LucideIcons.plus, size: 14),
+                    label: Text(
+                      'Setup Account Profile',
+                      style: AppTypography.mono(fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      AppHaptics.light();
+                      AccountSwitcherDialog.show(context);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: const RoundedRectangleBorder(borderRadius: AppSpacing.roundedSm),
+                    ),
+                    icon: const Icon(LucideIcons.users, size: 14, color: AppColors.textSecondary),
+                    label: Text(
+                      'Accounts',
+                      style: AppTypography.mono(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 3. Online & Ready Empty State
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

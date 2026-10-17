@@ -96,6 +96,30 @@ class HermesRepository {
     return HermesProject.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
+  /// Retrieves the unified project tree from daemon (projects.tree)
+  Future<Map<String, dynamic>> getProjectsTree() async {
+    try {
+      final response = await _client.call('projects.tree', {});
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  /// Retrieves the roster of agent profiles / bots from daemon (profiles.list)
+  Future<List<Map<String, dynamic>>> listProfiles() async {
+    try {
+      final response = await _client.call('profiles.list', {'include_sessions': true});
+      if (response is Map && response['profiles'] is List) {
+        return (response['profiles'] as List)
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   // --- MODELS & CONFIG ---
   Future<HermesConfig> getModelOptions() async {
     try {
