@@ -358,6 +358,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _updateTab(tabIndex, (tab) => tab.copyWith(title: title));
   }
 
+  void updateTabTitleBySessionId(String sessionId, String title) {
+    for (int i = 0; i < state.tabs.length; i++) {
+      if (state.tabs[i].sessionId == sessionId) {
+        _updateTab(i, (tab) => tab.copyWith(title: title));
+      }
+    }
+  }
+
   // --- TAB MANAGEMENT ---
 
   void createNewTab({String? title, String? sessionId, List<ChatMessage>? initialMessages}) {

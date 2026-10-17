@@ -20,6 +20,7 @@ class JsonRpcClient {
   ];
 
   String _serverUrl;
+  String? _authToken;
   Uri? _activeUri;
   WebSocketChannel? _channel;
   StreamSubscription? _channelSubscription;
@@ -47,6 +48,7 @@ class JsonRpcClient {
 
   // Getters
   String get serverUrl => _serverUrl;
+  String? get authToken => _authToken;
   Uri? get activeUri => _activeUri;
   ConnectionStatus get status => _status;
   int? get latencyMs => _latencyMs;
@@ -54,19 +56,35 @@ class JsonRpcClient {
   Stream<JsonRpcNotification> get notificationStream => _notificationController.stream;
   Stream<int?> get latencyStream => _latencyController.stream;
 
-  /// Memperbarui URL server dan menyambung ulang jika sedang aktif
-  void updateServerUrl(String newUrl) {
-    if (_serverUrl == newUrl) return;
-    _serverUrl = newUrl;
-    if (_status == ConnectionStatus.connected || _status == ConnectionStatus.connecting) {
+  /// Memperbarui URL server dan token lalu menyambung ulang jika berubah
+  void updateCredentials({required String url, String? token}) {
+    final urlChanged = _serverUrl != url;
+    final tokenChanged = _authToken != token;
+    _serverUrl = url;
+    _authToken = token;
+
+    if (urlChanged || tokenChanged) {
       connect();
     }
   }
 
+  /// Memperbarui URL server dan menyambung ulang jika sedang aktif
+  void updateServerUrl(String newUrl) {
+    updateCredentials(url: newUrl, token: _authToken);
+  }
+
+  /// Memperbarui token autentikasi
+  void updateToken(String? token) {
+    updateCredentials(url: _serverUrl, token: token);
+  }
+
   /// Memulai koneksi ke server
-  Future<void> connect({String? url}) async {
+  Future<void> connect({String? url, String? token}) async {
     if (url != null) {
       _serverUrl = url;
+    }
+    if (token != null) {
+      _authToken = token;
     }
 
     _manuallyDisconnected = false;
@@ -78,7 +96,7 @@ class JsonRpcClient {
         : ConnectionStatus.connecting);
 
     try {
-      final uri = await HermesUrlResolver.resolve(_serverUrl);
+      final uri = await HermesUrlResolver.resolve(_serverUrl, overrideToken: _authToken);
       _activeUri = uri;
       debugPrint('[JsonRpcClient] Connecting to WebSocket: $uri');
       final channel = WebSocketChannel.connect(uri);
@@ -101,7 +119,21 @@ class JsonRpcClient {
     } catch (e) {
       debugPrint('[JsonRpcClient] Connection error to $_serverUrl (resolved: $_activeUri): $e');
       _cleanupChannel();
-      _handleDisconnect();
+
+      final errStr = e.toString().toLowerCase();
+      final isAuthError = errStr.contains('401') ||
+          errStr.contains('403') ||
+          errStr.contains('unauthorized') ||
+          errStr.contains('forbidden') ||
+          errStr.contains('authentication');
+
+      if (isAuthError) {
+        debugPrint('[JsonRpcClient] Authentication required/rejected for $_serverUrl');
+        _setStatus(ConnectionStatus.unauthorized);
+        _cancelReconnectTimer();
+      } else {
+        _handleDisconnect();
+      }
     }
   }
 
@@ -230,6 +262,10 @@ class JsonRpcClient {
 
     if (_manuallyDisconnected) {
       _setStatus(ConnectionStatus.disconnected);
+      return;
+    }
+
+    if (_status == ConnectionStatus.unauthorized) {
       return;
     }
 

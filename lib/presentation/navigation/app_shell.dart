@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/haptics.dart';
+import '../../state/account_provider.dart';
 import '../../state/approval_provider.dart';
 import '../../state/chat_provider.dart';
 import '../../state/connection_provider.dart';
@@ -13,16 +15,23 @@ import '../screens/chat/chat_screen.dart';
 import '../screens/projects/projects_screen.dart';
 import '../screens/sessions/sessions_screen.dart';
 import '../screens/settings/settings_screen.dart';
+import '../widgets/account_switcher_dialog.dart';
 import '../widgets/connection_pill.dart';
 import '../widgets/hermes_sidebar.dart';
 import '../widgets/hermes_status_bar.dart';
+import '../widgets/onboarding_welcome_dialog.dart';
 
 final activeTabProvider = StateProvider<int>((ref) => 0);
-final sidebarOpenProvider = StateProvider<bool>((ref) => false);
+final sidebarOpenProvider = StateProvider<bool>((ref) => true);
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
   static const List<Widget> _screens = [
     ChatScreen(),
     SessionsScreen(),
@@ -32,14 +41,36 @@ class AppShell extends ConsumerWidget {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstRunOnboarding());
+  }
+
+  Future<void> _checkFirstRunOnboarding() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shown = prefs.getBool('talaria_onboarding_shown') ?? false;
+      final conn = ref.read(connectionProvider);
+      final accounts = ref.read(accountProvider).accounts;
+
+      if (!shown && !conn.isConnected && (accounts.isEmpty || accounts.first.token == null)) {
+        await prefs.setBool('talaria_onboarding_shown', true);
+        if (mounted) {
+          OnboardingWelcomeDialog.show(context);
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 720;
         if (isDesktop) {
-        return const _DesktopShell(screens: _screens);
+          return const _DesktopShell(screens: _screens);
         } else {
-        return const _MobileShell(screens: _screens);
+          return const _MobileShell(screens: _screens);
         }
       },
     );
@@ -437,6 +468,7 @@ class _DesktopShell extends ConsumerWidget {
     final pendingCount = approvalState.count;
     final modelState = ref.watch(modelConfigProvider);
     final chatState = ref.watch(chatProvider);
+    final isSidebarOpen = ref.watch(sidebarOpenProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -446,10 +478,11 @@ class _DesktopShell extends ConsumerWidget {
           Expanded(
             child: Row(
               children: [
-                // Hermes-parity Sidebar
-                const HermesSidebar(),
-
-                const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                // Hermes-parity Sidebar (Collapsible / Minimizable)
+                if (isSidebarOpen) ...[
+                  const HermesSidebar(),
+                  const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                ],
 
                 // Main View (Header + Content)
                 Expanded(
@@ -514,6 +547,25 @@ class _DesktopHeader extends ConsumerWidget {
       ),
       child: Row(
         children: [
+          // Sidebar minimize / expand toggle
+          IconButton(
+            icon: Icon(
+              ref.watch(sidebarOpenProvider)
+                  ? LucideIcons.panelLeftClose
+                  : LucideIcons.panelLeftOpen,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
+            tooltip: ref.watch(sidebarOpenProvider) ? 'Minimize Sidebar' : 'Expand Sidebar',
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            onPressed: () {
+              AppHaptics.light();
+              ref.read(sidebarOpenProvider.notifier).state = !ref.read(sidebarOpenProvider);
+            },
+          ),
+          const SizedBox(width: 10),
+
           // Brand Logo Glyph
           Container(
             padding: const EdgeInsets.all(5),
@@ -658,6 +710,51 @@ class _DesktopHeader extends ConsumerWidget {
             ),
             const SizedBox(width: 10),
           ],
+
+          // Account Badge Pill
+          Builder(
+            builder: (ctx) {
+              final activeAccount = ref.watch(accountProvider).activeAccount;
+              if (activeAccount == null) return const SizedBox.shrink();
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: InkWell(
+                  onTap: () {
+                    AppHaptics.light();
+                    AccountSwitcherDialog.show(context);
+                  },
+                  borderRadius: AppSpacing.roundedSm,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: AppSpacing.roundedSm,
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(LucideIcons.server, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 5),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Text(
+                            activeAccount.name,
+                            style: AppTypography.mono(fontSize: 11, color: AppColors.textPrimary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(LucideIcons.chevronDown, size: 10, color: AppColors.textMuted),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // Connection Pill (always right side)
           const ConnectionPill(),

@@ -95,6 +95,24 @@ class SessionNotifier extends StateNotifier<SessionState> {
     );
   }
 
+  void renameSessionLocal(String sessionId, String newTitle) {
+    state = state.copyWith(
+      sessions: state.sessions.map((s) {
+        if (s.id == sessionId) {
+          return HermesSession(
+            id: s.id,
+            title: newTitle,
+            project: s.project,
+            createdAt: s.createdAt,
+            updatedAt: DateTime.now(),
+            messageCount: s.messageCount,
+          );
+        }
+        return s;
+      }).toList(),
+    );
+  }
+
   Future<void> deleteSession(String sessionId) async {
     try {
       final repo = _ref.read(hermesRepositoryProvider);

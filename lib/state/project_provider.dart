@@ -1,17 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/network/connection_status.dart';
 import '../data/models/project.dart';
+import '../data/models/project_tree_node.dart';
 import 'connection_provider.dart';
 
 class ProjectState {
   final List<HermesProject> projects;
   final HermesProject? activeProject;
+  final List<ProjectTreeNode> treeNodes;
   final bool isLoading;
   final String? error;
 
   const ProjectState({
     this.projects = const [],
     this.activeProject,
+    this.treeNodes = const [],
     this.isLoading = false,
     this.error,
   });
@@ -19,12 +22,14 @@ class ProjectState {
   ProjectState copyWith({
     List<HermesProject>? projects,
     HermesProject? activeProject,
+    List<ProjectTreeNode>? treeNodes,
     bool? isLoading,
     String? error,
   }) {
     return ProjectState(
       projects: projects ?? this.projects,
       activeProject: activeProject ?? this.activeProject,
+      treeNodes: treeNodes ?? this.treeNodes,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -44,6 +49,9 @@ class ProjectNotifier extends StateNotifier<ProjectState> {
         loadProjects();
       }
     });
+    if (_ref.read(connectionProvider).status.isConnected) {
+      loadProjects();
+    }
   }
 
   Future<void> loadProjects() async {
@@ -52,9 +60,43 @@ class ProjectNotifier extends StateNotifier<ProjectState> {
       final repo = _ref.read(hermesRepositoryProvider);
       final list = await repo.listProjects();
       final active = list.where((p) => p.isActive).firstOrNull;
+
+      // Also fetch unified projects.tree
+      List<ProjectTreeNode> nodes = [];
+      try {
+        final treeData = await repo.getProjectsTree();
+        final rawProjects = treeData['projects'];
+        if (rawProjects is List && rawProjects.isNotEmpty) {
+          nodes = rawProjects
+              .map((p) => ProjectTreeNode.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList();
+        }
+      } catch (_) {}
+
+      // Fallback: If projects.tree didn't return nodes, synthesize Home + Projects
+      if (nodes.isEmpty) {
+        nodes = [
+          const ProjectTreeNode(
+            id: '__no_project__',
+            label: 'DEFAULT HOME',
+            gitBranch: 'main',
+            isNoProject: true,
+          ),
+          ...list.map(
+            (p) => ProjectTreeNode(
+              id: p.id,
+              label: p.name.toUpperCase(),
+              path: p.path,
+              gitBranch: 'main',
+            ),
+          ),
+        ];
+      }
+
       state = state.copyWith(
         projects: list,
         activeProject: active,
+        treeNodes: nodes,
         isLoading: false,
       );
     } catch (e) {
@@ -94,6 +136,7 @@ class ProjectNotifier extends StateNotifier<ProjectState> {
         projects: [...state.projects, project],
         isLoading: false,
       );
+      loadProjects();
       return project;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
