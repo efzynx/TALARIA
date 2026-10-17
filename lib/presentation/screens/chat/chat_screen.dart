@@ -7,8 +7,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/haptics.dart';
 import '../../../data/models/chat_message.dart';
+import '../../../data/models/slash_command.dart';
 import '../../../state/approval_provider.dart';
 import '../../../state/chat_provider.dart';
+import '../../../state/model_provider.dart';
+import '../../../state/skills_provider.dart';
 import '../../widgets/approval_sheet.dart';
 import '../../widgets/tool_accordion.dart';
 
@@ -24,12 +27,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
+  bool _isSlashCommandOpen = false;
+  List<SlashCommandItem> _slashMatches = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.addListener(_onTextChanged);
+  }
+
   @override
   void dispose() {
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    final text = _textController.text;
+    if (text.startsWith('/') && !text.contains(' ') && !text.contains('\n')) {
+      final matches = ref.read(skillsProvider.notifier).search(text);
+      setState(() {
+        _isSlashCommandOpen = true;
+        _slashMatches = matches.take(8).toList();
+      });
+    } else {
+      if (_isSlashCommandOpen) {
+        setState(() {
+          _isSlashCommandOpen = false;
+          _slashMatches = [];
+        });
+      }
+    }
+  }
+
+  void _applySlashCommand(SlashCommandItem item) {
+    AppHaptics.light();
+    if (item.trigger == '/new') {
+      _textController.clear();
+      setState(() => _isSlashCommandOpen = false);
+      ref.read(chatProvider.notifier).startNewSession();
+    } else if (item.trigger == '/clear') {
+      _textController.clear();
+      setState(() => _isSlashCommandOpen = false);
+      ref.read(chatProvider.notifier).clearMessages();
+    } else if (item.trigger == '/model') {
+      setState(() => _isSlashCommandOpen = false);
+      _showModelPickerSheet(context, ref);
+    } else if (item.trigger == '/reasoning') {
+      setState(() => _isSlashCommandOpen = false);
+      _showReasoningPickerSheet(context, ref);
+    } else {
+      _textController.text = '${item.trigger} ';
+      _textController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _textController.text.length),
+      );
+      setState(() => _isSlashCommandOpen = false);
+      _focusNode.requestFocus();
+    }
   }
 
   void _scrollToBottom() {
@@ -48,16 +105,261 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _textController.text;
     if (text.trim().isEmpty) return;
 
+    setState(() => _isSlashCommandOpen = false);
     AppHaptics.medium();
     ref.read(chatProvider.notifier).sendMessage(text);
     _textController.clear();
     _scrollToBottom();
   }
 
+  void _showModelPickerSheet(BuildContext context, WidgetRef ref) {
+    AppHaptics.light();
+    final modelState = ref.read(modelConfigProvider);
+    final allModels = modelState.config.allAvailableModels;
+    final currentActive = modelState.config.activeModel;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusLg)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: const BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: AppSpacing.roundedFull,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.cpu, size: 18, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Select Active Model',
+                          style: AppTypography.textTheme.titleMedium,
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(LucideIcons.refreshCw, size: 16),
+                          tooltip: 'Sync Models',
+                          onPressed: () async {
+                            await ref.read(modelConfigProvider.notifier).fetchModelOptions();
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Switch the LLM model running your Hermes Agent turns:',
+                      style: AppTypography.textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: allModels.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No models found. Check daemon connection.',
+                                style: AppTypography.textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: allModels.length,
+                              itemBuilder: (ctx, index) {
+                                final model = allModels[index];
+                                final isSelected = model == currentActive;
+
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? AppColors.surfaceHover : AppColors.background,
+                                    borderRadius: AppSpacing.roundedSm,
+                                    border: Border.all(
+                                      color: isSelected ? AppColors.primary : AppColors.border,
+                                    ),
+                                  ),
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                    title: Text(
+                                      model,
+                                      style: AppTypography.mono(
+                                        fontSize: 13,
+                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                        color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    trailing: isSelected
+                                        ? const Icon(LucideIcons.check, size: 16, color: AppColors.primary)
+                                        : null,
+                                    onTap: () {
+                                      Navigator.of(ctx).pop();
+                                      ref.read(modelConfigProvider.notifier).setModel(model);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Model switched to $model', style: AppTypography.textTheme.bodySmall),
+                                          backgroundColor: AppColors.surface,
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showReasoningPickerSheet(BuildContext context, WidgetRef ref) {
+    AppHaptics.light();
+    final modelState = ref.read(modelConfigProvider);
+    final currentModel = modelState.config.activeModel;
+    final currentEffort = modelState.config.reasoningEffort;
+
+    const options = [
+      {'level': 'none', 'label': 'None', 'desc': 'Standard generation with no explicit reasoning chain.'},
+      {'level': 'low', 'label': 'Low', 'desc': 'Fast thinking for light questions and basic coding stubs.'},
+      {'level': 'medium', 'label': 'Medium', 'desc': 'Balanced thought budget for typical tasks.'},
+      {'level': 'high', 'label': 'High (Recommended)', 'desc': 'Deep exploration and self-correction for complex problems.'},
+      {'level': 'ultra', 'label': 'Ultra', 'desc': 'Maximum deliberation budget for architecture & security sweeps.'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusLg)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: const BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: AppSpacing.roundedFull,
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    const Icon(LucideIcons.brain, size: 18, color: AppColors.thinking),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Reasoning Effort Level',
+                      style: AppTypography.textTheme.titleMedium,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Sets the deliberation budget for $currentModel:',
+                  style: AppTypography.textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 12),
+                ...options.map((opt) {
+                  final level = opt['level']!;
+                  final isSelected = level == currentEffort;
+
+                  return Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.surfaceHover : AppColors.background,
+                      borderRadius: AppSpacing.roundedSm,
+                      border: Border.all(
+                        color: isSelected ? AppColors.thinking : AppColors.border,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                      title: Text(
+                        opt['label']!,
+                        style: AppTypography.mono(
+                          fontSize: 13,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                          color: isSelected ? AppColors.thinking : AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        opt['desc']!,
+                        style: AppTypography.textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(LucideIcons.check, size: 16, color: AppColors.thinking)
+                          : null,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        ref.read(modelConfigProvider.notifier).setModel(
+                              currentModel,
+                              reasoningEffort: level,
+                            );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Reasoning effort set to ${level.toUpperCase()}',
+                              style: AppTypography.textTheme.bodySmall,
+                            ),
+                            backgroundColor: AppColors.surface,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
+    final modelState = ref.watch(modelConfigProvider);
     final messages = chatState.messages;
+
+    final activeModel = modelState.config.activeModel;
+    final activeReasoning = modelState.config.reasoningEffort;
 
     ref.listen(chatProvider, (_, __) => _scrollToBottom());
 
@@ -74,64 +376,119 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Session Info & Action Bar
+            // Controls Bar (Model Pill, Reasoning Pill, Session Pill, New Session)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: const BoxDecoration(
                 color: AppColors.surface,
                 border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    chatState.activeSessionId != null ? LucideIcons.radio : LucideIcons.plusCircle,
-                    size: 14,
-                    color: chatState.activeSessionId != null ? AppColors.ok : AppColors.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      chatState.activeSessionId != null
-                          ? 'SESSION: ${chatState.activeSessionId}'
-                          : 'SESSION: NEW (DEFAULT AUTO-CREATE)',
-                      style: AppTypography.mono(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: chatState.activeSessionId != null
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (chatState.activeSessionId != null)
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // Model Pill
                     InkWell(
-                      onTap: () {
-                        AppHaptics.light();
-                        ref.read(chatProvider.notifier).startNewSession();
-                      },
+                      onTap: () => _showModelPickerSheet(context, ref),
+                      borderRadius: AppSpacing.roundedSm,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: AppColors.background,
                           borderRadius: AppSpacing.roundedSm,
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(color: AppColors.primary.withAlpha(120)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(LucideIcons.plus, size: 12, color: AppColors.primary),
-                            const SizedBox(width: 4),
+                            const Icon(LucideIcons.cpu, size: 13, color: AppColors.primary),
+                            const SizedBox(width: 5),
                             Text(
-                              'New',
-                              style: AppTypography.mono(fontSize: 10, color: AppColors.primary),
+                              activeModel,
+                              style: AppTypography.mono(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
                             ),
+                            const SizedBox(width: 4),
+                            const Icon(LucideIcons.chevronDown, size: 11, color: AppColors.textMuted),
                           ],
                         ),
                       ),
                     ),
-                ],
+                    const SizedBox(width: 8),
+
+                    // Reasoning Effort Pill
+                    InkWell(
+                      onTap: () => _showReasoningPickerSheet(context, ref),
+                      borderRadius: AppSpacing.roundedSm,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: AppSpacing.roundedSm,
+                          border: Border.all(color: AppColors.thinking.withAlpha(120)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(LucideIcons.brain, size: 13, color: AppColors.thinking),
+                            const SizedBox(width: 5),
+                            Text(
+                              activeReasoning.toUpperCase(),
+                              style: AppTypography.mono(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.thinking,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(LucideIcons.chevronDown, size: 11, color: AppColors.textMuted),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Session Info Pill
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: AppSpacing.roundedSm,
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            chatState.activeSessionId != null ? LucideIcons.radio : LucideIcons.plusCircle,
+                            size: 12,
+                            color: chatState.activeSessionId != null ? AppColors.ok : AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            chatState.activeSessionId != null
+                                ? 'ID: ${chatState.activeSessionId!.length > 8 ? chatState.activeSessionId!.substring(0, 8) : chatState.activeSessionId}'
+                                : 'NEW',
+                            style: AppTypography.mono(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      icon: const Icon(LucideIcons.plus, size: 16),
+                      color: AppColors.primary,
+                      tooltip: 'New Session',
+                      onPressed: () {
+                        AppHaptics.light();
+                        ref.read(chatProvider.notifier).startNewSession();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -178,6 +535,84 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
 
+            // Floating Slash Command Autocomplete Overlay
+            if (_isSlashCommandOpen && _slashMatches.isNotEmpty)
+              Container(
+                constraints: const BoxConstraints(maxHeight: 220),
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: AppSpacing.roundedMd,
+                  border: Border.all(color: AppColors.primary.withAlpha(140), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(140),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: _slashMatches.length,
+                  separatorBuilder: (_, __) => const Divider(color: AppColors.border, height: 1),
+                  itemBuilder: (context, index) {
+                    final item = _slashMatches[index];
+                    return InkWell(
+                      onTap: () => _applySlashCommand(item),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (item.type == SlashCommandType.skill ? AppColors.thinking : AppColors.primary).withAlpha(30),
+                                borderRadius: AppSpacing.roundedSm,
+                              ),
+                              child: Text(
+                                item.type == SlashCommandType.skill ? 'SKILL' : 'CMD',
+                                style: AppTypography.mono(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: item.type == SlashCommandType.skill ? AppColors.thinking : AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.trigger,
+                                    style: AppTypography.mono(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  Text(
+                                    item.description,
+                                    style: AppTypography.textTheme.bodySmall?.copyWith(
+                                      fontSize: 11,
+                                      color: AppColors.textMuted,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
             // Bottom Thumb-Zone Input Bar
             _buildInputBar(),
           ],
@@ -201,7 +636,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Type a prompt or task instruction below.',
+            'Type / for commands, skills, or prompt instructions.',
             style: AppTypography.textTheme.bodySmall?.copyWith(
               color: AppColors.textMuted,
             ),
@@ -433,7 +868,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _handleSend(),
               decoration: InputDecoration(
-                hintText: 'Command or prompt Hermes...',
+                hintText: 'Type / for commands, skills, or prompt...',
                 hintStyle: AppTypography.textTheme.bodyMedium?.copyWith(
                   color: AppColors.textMuted,
                 ),

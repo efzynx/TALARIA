@@ -5,8 +5,10 @@ import '../core/network/json_rpc_message.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/tool_call.dart';
 import 'connection_provider.dart';
+import 'model_provider.dart';
 import 'project_provider.dart';
 import 'session_provider.dart';
+import 'skills_provider.dart';
 
 class ChatState {
   final List<ChatMessage> messages;
@@ -229,6 +231,48 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
+    // Check for client-handled slash commands
+    if (trimmed.startsWith('/')) {
+      final parts = trimmed.split(' ');
+      final cmd = parts[0].toLowerCase();
+      final args = parts.length > 1 ? parts.sublist(1).join(' ').trim() : '';
+
+      if (cmd == '/new') {
+        startNewSession();
+        return;
+      }
+      if (cmd == '/clear') {
+        clearMessages();
+        return;
+      }
+      if (cmd == '/help') {
+        _handleHelpCommand();
+        return;
+      }
+      if (cmd == '/skills') {
+        _handleSkillsCommand();
+        return;
+      }
+      if (cmd == '/model') {
+        if (args.isNotEmpty) {
+          _handleModelSwitch(args);
+          return;
+        } else {
+          _handleModelListHelp();
+          return;
+        }
+      }
+      if (cmd == '/reasoning') {
+        if (args.isNotEmpty) {
+          _handleReasoningSwitch(args);
+          return;
+        } else {
+          _handleReasoningListHelp();
+          return;
+        }
+      }
+    }
+
     final userMessage = ChatMessage(
       id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
       role: MessageRole.user,
@@ -287,6 +331,222 @@ class ChatNotifier extends StateNotifier<ChatState> {
         isThinking: false,
       );
     }
+  }
+
+  void _handleHelpCommand() {
+    final now = DateTime.now();
+    state = state.copyWith(
+      messages: [
+        ...state.messages,
+        ChatMessage(
+          id: 'usr_${now.millisecondsSinceEpoch}',
+          role: MessageRole.user,
+          content: '/help',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: 'sys_${now.millisecondsSinceEpoch + 1}',
+          role: MessageRole.assistant,
+          content: '''
+### Available Commands & Controls
+
+| Command | Usage | Description |
+|---|---|---|
+| `/model` | `/model <name>` | Switch active model (e.g. `/model AG-gemini`, `/model AG-claude`) |
+| `/reasoning` | `/reasoning <level>` | Set reasoning effort (`none`, `low`, `medium`, `high`, `ultra`) |
+| `/new` | `/new` | Start a fresh session with default home or active workspace |
+| `/clear` | `/clear` | Clear message history in the current buffer |
+| `/skills` | `/skills` | Display all loaded skills and categories |
+| `/help` | `/help` | Display this command guide |
+
+---
+**Skill Trigger Examples:**
+Type `/` in chat to autocomplete skills:
+- `/reverse-engineer-anything <target>`
+- `/no-ai-slop <draft>`
+- `/frontend-ui-engineering <spec>`
+- `/systematic-debugging <issue>`
+''',
+          timestamp: now,
+        ),
+      ],
+      isThinking: false,
+    );
+  }
+
+  void _handleSkillsCommand() {
+    final now = DateTime.now();
+    final skillsMap = _ref.read(skillsProvider).categorizedSkills;
+
+    final buffer = StringBuffer();
+    buffer.writeln('### Installed Hermes Skills\n');
+
+    if (skillsMap.isEmpty) {
+      buffer.writeln('No skills loaded yet or daemon still synchronizing.');
+    } else {
+      skillsMap.forEach((category, list) {
+        buffer.writeln('#### **${category.toUpperCase()}**');
+        for (final skill in list) {
+          final cleanName = skill.contains('/') ? skill.split('/').last : skill;
+          buffer.writeln('- `/$cleanName` ($skill)');
+        }
+        buffer.writeln();
+      });
+    }
+
+    state = state.copyWith(
+      messages: [
+        ...state.messages,
+        ChatMessage(
+          id: 'usr_${now.millisecondsSinceEpoch}',
+          role: MessageRole.user,
+          content: '/skills',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: 'sys_${now.millisecondsSinceEpoch + 1}',
+          role: MessageRole.assistant,
+          content: buffer.toString(),
+          timestamp: now,
+        ),
+      ],
+      isThinking: false,
+    );
+  }
+
+  void _handleModelSwitch(String modelName) async {
+    final now = DateTime.now();
+    final userMsg = ChatMessage(
+      id: 'usr_${now.millisecondsSinceEpoch}',
+      role: MessageRole.user,
+      content: '/model $modelName',
+      timestamp: now,
+    );
+    state = state.copyWith(messages: [...state.messages, userMsg], isThinking: true);
+
+    try {
+      await _ref.read(modelConfigProvider.notifier).setModel(modelName);
+      final reply = ChatMessage(
+        id: 'sys_${DateTime.now().millisecondsSinceEpoch}',
+        role: MessageRole.assistant,
+        content: 'Model successfully switched to **$modelName**.',
+        timestamp: DateTime.now(),
+      );
+      state = state.copyWith(messages: [...state.messages, reply], isThinking: false);
+    } catch (e) {
+      final err = ChatMessage(
+        id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+        role: MessageRole.system,
+        content: 'Failed to switch model: $e',
+        timestamp: DateTime.now(),
+      );
+      state = state.copyWith(messages: [...state.messages, err], isThinking: false);
+    }
+  }
+
+  void _handleModelListHelp() {
+    final now = DateTime.now();
+    final modelState = _ref.read(modelConfigProvider);
+    final active = modelState.config.activeModel;
+    final all = modelState.config.allAvailableModels;
+
+    state = state.copyWith(
+      messages: [
+        ...state.messages,
+        ChatMessage(
+          id: 'usr_${now.millisecondsSinceEpoch}',
+          role: MessageRole.user,
+          content: '/model',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: 'sys_${now.millisecondsSinceEpoch + 1}',
+          role: MessageRole.assistant,
+          content: '''
+### Active Model: `$active`
+
+To change model, type `/model <model_name>`:
+${all.map((m) => '- `/model $m`').join('\n')}
+''',
+          timestamp: now,
+        ),
+      ],
+      isThinking: false,
+    );
+  }
+
+  void _handleReasoningSwitch(String effort) async {
+    final now = DateTime.now();
+    final cleanEffort = effort.toLowerCase();
+    const valid = ['none', 'low', 'medium', 'high', 'ultra'];
+    if (!valid.contains(cleanEffort)) {
+      _handleReasoningListHelp();
+      return;
+    }
+
+    final userMsg = ChatMessage(
+      id: 'usr_${now.millisecondsSinceEpoch}',
+      role: MessageRole.user,
+      content: '/reasoning $cleanEffort',
+      timestamp: now,
+    );
+    state = state.copyWith(messages: [...state.messages, userMsg], isThinking: true);
+
+    try {
+      final currentModel = _ref.read(modelConfigProvider).config.activeModel;
+      await _ref.read(modelConfigProvider.notifier).setModel(
+            currentModel,
+            reasoningEffort: cleanEffort,
+          );
+      final reply = ChatMessage(
+        id: 'sys_${DateTime.now().millisecondsSinceEpoch}',
+        role: MessageRole.assistant,
+        content: 'Reasoning effort set to **${cleanEffort.toUpperCase()}**.',
+        timestamp: DateTime.now(),
+      );
+      state = state.copyWith(messages: [...state.messages, reply], isThinking: false);
+    } catch (e) {
+      final err = ChatMessage(
+        id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+        role: MessageRole.system,
+        content: 'Failed to set reasoning: $e',
+        timestamp: DateTime.now(),
+      );
+      state = state.copyWith(messages: [...state.messages, err], isThinking: false);
+    }
+  }
+
+  void _handleReasoningListHelp() {
+    final now = DateTime.now();
+    final current = _ref.read(modelConfigProvider).config.reasoningEffort;
+
+    state = state.copyWith(
+      messages: [
+        ...state.messages,
+        ChatMessage(
+          id: 'usr_${now.millisecondsSinceEpoch}',
+          role: MessageRole.user,
+          content: '/reasoning',
+          timestamp: now,
+        ),
+        ChatMessage(
+          id: 'sys_${now.millisecondsSinceEpoch + 1}',
+          role: MessageRole.assistant,
+          content: '''
+### Current Reasoning Effort: `${current.toUpperCase()}`
+
+Available options:
+- `/reasoning none`
+- `/reasoning low`
+- `/reasoning medium`
+- `/reasoning high`
+- `/reasoning ultra`
+''',
+          timestamp: now,
+        ),
+      ],
+      isThinking: false,
+    );
   }
 
   void loadResumedSession(String sessionId, List<dynamic> rawMessages) {

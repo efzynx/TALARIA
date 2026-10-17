@@ -133,4 +133,22 @@ class HermesRepository {
     }
     return [];
   }
+
+  // --- SKILLS ---
+  Future<Map<String, List<String>>> listSkills() async {
+    try {
+      final response = await _client.call('skills.manage', {'action': 'list'});
+      if (response is Map && response['skills'] is Map) {
+        final Map<String, dynamic> raw = Map<String, dynamic>.from(response['skills'] as Map);
+        final Map<String, List<String>> result = {};
+        raw.forEach((key, val) {
+          if (val is List) {
+            result[key] = val.map((e) => e.toString()).toList();
+          }
+        });
+        return result;
+      }
+    } catch (_) {}
+    return {};
+  }
 }
