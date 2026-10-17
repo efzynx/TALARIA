@@ -4,6 +4,7 @@ enum ConnectionStatus {
   connecting,
   connected,
   reconnecting,
+  unauthorized,
 }
 
 extension ConnectionStatusX on ConnectionStatus {
@@ -11,6 +12,7 @@ extension ConnectionStatusX on ConnectionStatus {
   bool get isConnecting => this == ConnectionStatus.connecting;
   bool get isReconnecting => this == ConnectionStatus.reconnecting;
   bool get isDisconnected => this == ConnectionStatus.disconnected;
+  bool get isUnauthorized => this == ConnectionStatus.unauthorized;
 
   String get label {
     switch (this) {
@@ -22,6 +24,8 @@ extension ConnectionStatusX on ConnectionStatus {
         return 'Reconnecting';
       case ConnectionStatus.disconnected:
         return 'Offline';
+      case ConnectionStatus.unauthorized:
+        return 'Auth Required';
     }
   }
 }

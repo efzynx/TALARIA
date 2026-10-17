@@ -5,9 +5,12 @@ import '../../../core/network/connection_status.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/haptics.dart';
+import '../../../state/account_provider.dart';
 import '../../../state/chat_provider.dart';
 import '../../../state/connection_provider.dart';
 import '../../../state/model_provider.dart';
+import '../../widgets/account_switcher_dialog.dart';
+import '../../widgets/login_dialog.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -119,6 +122,177 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // Accounts & Authentication Card
+            Builder(
+              builder: (context) {
+                final accountState = ref.watch(accountProvider);
+                final activeAccount = accountState.activeAccount;
+                final isUnauthorized = conn.status == ConnectionStatus.unauthorized;
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(LucideIcons.users, size: 18, color: AppColors.primary),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Accounts & Authentication',
+                              style: AppTypography.textTheme.titleMedium,
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: (isUnauthorized ? AppColors.warn : AppColors.primary).withAlpha(25),
+                                borderRadius: AppSpacing.roundedSm,
+                                border: Border.all(
+                                  color: isUnauthorized ? AppColors.warn : AppColors.primary,
+                                ),
+                              ),
+                              child: Text(
+                                '${accountState.accounts.length} PROFILES',
+                                style: AppTypography.mono(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isUnauthorized ? AppColors.warn : AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Manage multiple Hermes daemon connections (localhost, 0.0.0.0, LAN, VPS) and credentials.',
+                          style: AppTypography.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        if (activeAccount != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: AppSpacing.roundedSm,
+                              border: Border.all(
+                                color: isUnauthorized ? AppColors.warn : AppColors.border,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: isUnauthorized
+                                            ? AppColors.warn
+                                            : (conn.status.isConnected ? AppColors.ok : AppColors.textMuted),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        activeAccount.name,
+                                        style: AppTypography.mono(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: isUnauthorized ? AppColors.warn : AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      activeAccount.username != null && activeAccount.username!.isNotEmpty
+                                          ? '@${activeAccount.username}'
+                                          : 'No Auth',
+                                      style: AppTypography.mono(
+                                        fontSize: 11,
+                                        color: activeAccount.hasCredentials
+                                            ? AppColors.primary
+                                            : AppColors.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  activeAccount.serverUrl,
+                                  style: AppTypography.mono(fontSize: 11, color: AppColors.textMuted),
+                                ),
+                                if (isUnauthorized) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '⚠ Server requires username & password credentials (e.g. basic_auth on 0.0.0.0).',
+                                    style: AppTypography.textTheme.bodySmall?.copyWith(
+                                      fontSize: 11,
+                                      color: AppColors.warn,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                AppHaptics.light();
+                                AccountSwitcherDialog.show(context);
+                              },
+                              icon: const Icon(LucideIcons.arrowLeftRight, size: 14),
+                              label: const Text('Switch / Manage Accounts'),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                AppHaptics.light();
+                                LoginDialog.show(
+                                  context,
+                                  initialServerUrl: activeAccount?.serverUrl,
+                                  initialUsername: activeAccount?.username,
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isUnauthorized ? AppColors.warn : AppColors.primary,
+                                foregroundColor: AppColors.background,
+                              ),
+                              icon: const Icon(LucideIcons.keyRound, size: 14),
+                              label: Text(activeAccount?.hasToken == true ? 'Re-authenticate' : 'Sign In'),
+                            ),
+                            if (activeAccount?.hasToken == true)
+                              TextButton.icon(
+                                onPressed: () {
+                                  AppHaptics.light();
+                                  ref.read(accountProvider.notifier).logoutActiveAccount();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Logged out from active account')),
+                                  );
+                                },
+                                icon: const Icon(LucideIcons.logOut, size: 14, color: AppColors.error),
+                                label: Text('Sign Out', style: AppTypography.mono(fontSize: 12, color: AppColors.error)),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
 
             // Server URL Card
             Card(

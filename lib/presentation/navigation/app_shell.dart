@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/haptics.dart';
+import '../../state/account_provider.dart';
 import '../../state/approval_provider.dart';
 import '../../state/chat_provider.dart';
 import '../../state/connection_provider.dart';
@@ -13,6 +14,7 @@ import '../screens/chat/chat_screen.dart';
 import '../screens/projects/projects_screen.dart';
 import '../screens/sessions/sessions_screen.dart';
 import '../screens/settings/settings_screen.dart';
+import '../widgets/account_switcher_dialog.dart';
 import '../widgets/connection_pill.dart';
 import '../widgets/hermes_sidebar.dart';
 import '../widgets/hermes_status_bar.dart';
@@ -658,6 +660,51 @@ class _DesktopHeader extends ConsumerWidget {
             ),
             const SizedBox(width: 10),
           ],
+
+          // Account Badge Pill
+          Builder(
+            builder: (ctx) {
+              final activeAccount = ref.watch(accountProvider).activeAccount;
+              if (activeAccount == null) return const SizedBox.shrink();
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: InkWell(
+                  onTap: () {
+                    AppHaptics.light();
+                    AccountSwitcherDialog.show(context);
+                  },
+                  borderRadius: AppSpacing.roundedSm,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: AppSpacing.roundedSm,
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(LucideIcons.server, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 5),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Text(
+                            activeAccount.name,
+                            style: AppTypography.mono(fontSize: 11, color: AppColors.textPrimary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(LucideIcons.chevronDown, size: 10, color: AppColors.textMuted),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // Connection Pill (always right side)
           const ConnectionPill(),

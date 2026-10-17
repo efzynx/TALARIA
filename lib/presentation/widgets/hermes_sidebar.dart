@@ -5,11 +5,14 @@ import '../../core/network/connection_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/haptics.dart';
+import '../../state/account_provider.dart';
 import '../../state/chat_provider.dart';
 import '../../state/connection_provider.dart';
 import '../../state/project_provider.dart';
 import '../../state/session_provider.dart';
 import '../navigation/app_shell.dart';
+import 'account_switcher_dialog.dart';
+import 'login_dialog.dart';
 
 class HermesSidebar extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
@@ -46,6 +49,8 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
   @override
   Widget build(BuildContext context) {
     final conn = ref.watch(connectionProvider);
+    final accountState = ref.watch(accountProvider);
+    final activeAccount = accountState.activeAccount;
     final sessionState = ref.watch(sessionProvider);
     final projectState = ref.watch(projectProvider);
     final activeProject = projectState.activeProject;
@@ -134,6 +139,17 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                       widget.onClose?.call();
                       ref.read(activeTabProvider.notifier).state = 3;
                     },
+                  ),
+                  _buildActionButton(
+                    icon: LucideIcons.users,
+                    label: 'Accounts & Auth',
+                    badge: '${accountState.accounts.length}',
+                    onTap: () {
+                      AppHaptics.light();
+                      widget.onClose?.call();
+                      AccountSwitcherDialog.show(context);
+                    },
+                    accentColor: AppColors.primary,
                   ),
                 ],
               ),
@@ -280,6 +296,101 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                       },
                     ),
             ),
+
+            // Active Account Banner & Switcher
+            if (activeAccount != null) ...[
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: conn.status == ConnectionStatus.unauthorized
+                      ? AppColors.warn.withAlpha(20)
+                      : AppColors.background,
+                  borderRadius: AppSpacing.roundedSm,
+                  border: Border.all(
+                    color: conn.status == ConnectionStatus.unauthorized
+                        ? AppColors.warn
+                        : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      conn.status == ConnectionStatus.unauthorized
+                          ? LucideIcons.lock
+                          : LucideIcons.server,
+                      size: 13,
+                      color: conn.status == ConnectionStatus.unauthorized
+                          ? AppColors.warn
+                          : AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            activeAccount.name,
+                            style: AppTypography.mono(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: conn.status == ConnectionStatus.unauthorized
+                                  ? AppColors.warn
+                                  : AppColors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            activeAccount.username != null && activeAccount.username!.isNotEmpty
+                                ? '${activeAccount.username} • ${activeAccount.serverUrl}'
+                                : (conn.status == ConnectionStatus.unauthorized
+                                    ? 'Tap to Sign In'
+                                    : activeAccount.serverUrl),
+                            style: AppTypography.mono(
+                              fontSize: 9,
+                              color: conn.status == ConnectionStatus.unauthorized
+                                  ? AppColors.warn
+                                  : AppColors.textMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        AppHaptics.light();
+                        if (conn.status == ConnectionStatus.unauthorized) {
+                          LoginDialog.show(context, initialServerUrl: activeAccount.serverUrl);
+                        } else {
+                          AccountSwitcherDialog.show(context);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: AppSpacing.roundedSm,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          conn.status == ConnectionStatus.unauthorized ? 'LOGIN' : 'SWITCH',
+                          style: AppTypography.mono(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: conn.status == ConnectionStatus.unauthorized
+                                ? AppColors.warn
+                                : AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // Bottom Profile Switcher Dock (Hermes Persona Badges)
             Container(
