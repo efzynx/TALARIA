@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/network/connection_status.dart';
 import '../core/network/json_rpc_client.dart';
 import '../core/network/json_rpc_message.dart';
+import '../data/repositories/hermes_repository.dart';
 
 class ConnectionStateData {
   final ConnectionStatus status;
@@ -112,4 +113,9 @@ final connectionProvider =
 final clientProvider = Provider<JsonRpcClient>((ref) {
   final notifier = ref.watch(connectionProvider.notifier);
   return notifier.client;
+});
+
+final hermesRepositoryProvider = Provider<HermesRepository>((ref) {
+  final client = ref.watch(clientProvider);
+  return HermesRepository(client);
 });

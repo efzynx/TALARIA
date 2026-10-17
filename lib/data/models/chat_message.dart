@@ -1,3 +1,5 @@
+import 'tool_call.dart';
+
 enum MessageRole {
   user,
   assistant,
@@ -9,6 +11,7 @@ class ChatMessage {
   final MessageRole role;
   final String content;
   final String? thought;
+  final List<ToolCall> toolCalls;
   final DateTime timestamp;
   final bool isStreaming;
 
@@ -17,6 +20,7 @@ class ChatMessage {
     required this.role,
     required this.content,
     this.thought,
+    this.toolCalls = const [],
     required this.timestamp,
     this.isStreaming = false,
   });
@@ -26,6 +30,7 @@ class ChatMessage {
     MessageRole? role,
     String? content,
     String? thought,
+    List<ToolCall>? toolCalls,
     DateTime? timestamp,
     bool? isStreaming,
   }) {
@@ -34,6 +39,7 @@ class ChatMessage {
       role: role ?? this.role,
       content: content ?? this.content,
       thought: thought ?? this.thought,
+      toolCalls: toolCalls ?? this.toolCalls,
       timestamp: timestamp ?? this.timestamp,
       isStreaming: isStreaming ?? this.isStreaming,
     );

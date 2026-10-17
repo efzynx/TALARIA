@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/network/connection_status.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/haptics.dart';
 import '../../../state/chat_provider.dart';
 import '../../../state/connection_provider.dart';
 
@@ -16,6 +17,23 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _urlController;
+  String _selectedReasoning = 'high';
+  String _selectedModel = 'custom/AG-gemini';
+
+  static const List<String> _reasoningOptions = [
+    'none',
+    'low',
+    'medium',
+    'high',
+    'ultra',
+  ];
+
+  static const List<String> _commonModels = [
+    'custom/AG-gemini',
+    'anthropic/claude-3-7-sonnet',
+    'openai/gpt-4o',
+    'openai/o3-mini',
+  ];
 
   @override
   void initState() {
@@ -33,6 +51,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _saveUrl() {
     final url = _urlController.text.trim();
     if (url.isNotEmpty) {
+      AppHaptics.light();
       ref.read(connectionProvider.notifier).updateServerUrl(url);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -42,6 +61,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       );
     }
+  }
+
+  void _updateModelConfig() {
+    AppHaptics.light();
+    ref.read(connectionProvider.notifier).call('model.options', {
+      'model': _selectedModel,
+      'reasoning_effort': _selectedReasoning,
+    }).catchError((e) {
+      // offline or unsupported
+      return null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Model config set: $_selectedModel ($_selectedReasoning)',
+          style: AppTypography.textTheme.bodySmall,
+        ),
+        backgroundColor: AppColors.surface,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -115,6 +156,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             const SizedBox(height: 16),
 
+            // Model & Reasoning Configuration Card
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.cpu, size: 18, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          'LLM & Reasoning Engine',
+                          style: AppTypography.textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Configure active model and reasoning intensity.',
+                      style: AppTypography.textTheme.bodySmall?.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'ACTIVE MODEL',
+                      style: AppTypography.mono(fontSize: 10, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      value: _selectedModel,
+                      dropdownColor: AppColors.surface,
+                      style: AppTypography.mono(fontSize: 12, color: AppColors.textPrimary),
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: _commonModels.map((m) {
+                        return DropdownMenuItem(value: m, child: Text(m));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedModel = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'REASONING EFFORT',
+                      style: AppTypography.mono(fontSize: 10, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      style: SegmentedButton.styleFrom(
+                        backgroundColor: AppColors.background,
+                        selectedBackgroundColor: AppColors.primary,
+                        selectedForegroundColor: AppColors.background,
+                      ),
+                      segments: _reasoningOptions.map((opt) {
+                        return ButtonSegment(
+                          value: opt,
+                          label: Text(opt.toUpperCase(), style: const TextStyle(fontSize: 10)),
+                        );
+                      }).toList(),
+                      selected: {_selectedReasoning},
+                      onSelectionChanged: (set) {
+                        setState(() => _selectedReasoning = set.first);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(LucideIcons.save, size: 16),
+                        label: const Text('Apply Model Settings'),
+                        onPressed: conn.status.isConnected ? _updateModelConfig : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
             // Connection Health Card
             Card(
               child: Padding(
@@ -175,6 +299,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: () {
+                        AppHaptics.light();
                         ref.read(chatProvider.notifier).clearMessages();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -219,6 +344,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Target: Android • Linux • Windows',
+                      style: AppTypography.mono(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Author: Ahmad Fauzan Adiman (Efzyn) • MIT License',
                       style: AppTypography.mono(
                         fontSize: 11,
                         color: AppColors.textMuted,

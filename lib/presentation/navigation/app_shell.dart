@@ -1,26 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../state/approval_provider.dart';
 import '../screens/approvals/approvals_screen.dart';
 import '../screens/chat/chat_screen.dart';
+import '../screens/projects/projects_screen.dart';
 import '../screens/sessions/sessions_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../widgets/connection_pill.dart';
 
-class AppShell extends StatefulWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
 
   static const List<Widget> _screens = [
     ChatScreen(),
     SessionsScreen(),
+    ProjectsScreen(),
     ApprovalsScreen(),
     SettingsScreen(),
   ];
@@ -28,27 +32,31 @@ class _AppShellState extends State<AppShell> {
   static const List<String> _titles = [
     'TALARIA / CHAT',
     'TALARIA / SESSIONS',
+    'TALARIA / PROJECTS',
     'TALARIA / APPROVALS',
     'TALARIA / SETTINGS',
   ];
 
   @override
   Widget build(BuildContext context) {
+    final approvalState = ref.watch(approvalProvider);
+    final pendingCount = approvalState.count;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 720;
 
         if (isDesktop) {
-          return _buildDesktopLayout();
+          return _buildDesktopLayout(pendingCount);
         } else {
-          return _buildMobileLayout();
+          return _buildMobileLayout(pendingCount);
         }
       },
     );
   }
 
   /// Mobile Layout: Top AppBar with ConnectionPill + Bottom Navigation Bar
-  Widget _buildMobileLayout() {
+  Widget _buildMobileLayout(int pendingCount) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -80,20 +88,31 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(LucideIcons.messageSquare),
             label: 'Chat',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(LucideIcons.layers),
             label: 'Sessions',
           ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.shieldCheck),
-            label: 'Approvals',
+          const NavigationDestination(
+            icon: Icon(LucideIcons.folderKanban),
+            label: 'Projects',
           ),
           NavigationDestination(
+            icon: pendingCount > 0
+                ? Badge.count(
+                    count: pendingCount,
+                    backgroundColor: AppColors.error,
+                    textColor: Colors.white,
+                    child: const Icon(LucideIcons.shieldAlert),
+                  )
+                : const Icon(LucideIcons.shieldCheck),
+            label: 'Approvals',
+          ),
+          const NavigationDestination(
             icon: Icon(LucideIcons.settings),
             label: 'Settings',
           ),
@@ -103,7 +122,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   /// Desktop Layout: NavigationRail on left + Header with ConnectionPill + Content
-  Widget _buildDesktopLayout() {
+  Widget _buildDesktopLayout(int pendingCount) {
     return Scaffold(
       body: Row(
         children: [
@@ -141,23 +160,35 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            destinations: const [
-              NavigationRailDestination(
+            destinations: [
+              const NavigationRailDestination(
                 icon: Icon(LucideIcons.messageSquare),
                 selectedIcon: Icon(LucideIcons.messageSquare, color: AppColors.primary),
                 label: Text('Chat'),
               ),
-              NavigationRailDestination(
+              const NavigationRailDestination(
                 icon: Icon(LucideIcons.layers),
                 selectedIcon: Icon(LucideIcons.layers, color: AppColors.primary),
                 label: Text('Sessions'),
               ),
-              NavigationRailDestination(
-                icon: Icon(LucideIcons.shieldCheck),
-                selectedIcon: Icon(LucideIcons.shieldCheck, color: AppColors.primary),
-                label: Text('Approvals'),
+              const NavigationRailDestination(
+                icon: Icon(LucideIcons.folderKanban),
+                selectedIcon: Icon(LucideIcons.folderKanban, color: AppColors.primary),
+                label: Text('Projects'),
               ),
               NavigationRailDestination(
+                icon: pendingCount > 0
+                    ? Badge.count(
+                        count: pendingCount,
+                        backgroundColor: AppColors.error,
+                        textColor: Colors.white,
+                        child: const Icon(LucideIcons.shieldAlert),
+                      )
+                    : const Icon(LucideIcons.shieldCheck),
+                selectedIcon: const Icon(LucideIcons.shieldCheck, color: AppColors.primary),
+                label: const Text('Approvals'),
+              ),
+              const NavigationRailDestination(
                 icon: Icon(LucideIcons.settings),
                 selectedIcon: Icon(LucideIcons.settings, color: AppColors.primary),
                 label: Text('Settings'),

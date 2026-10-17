@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/network/connection_status.dart';
 import '../core/network/json_rpc_message.dart';
 import '../data/models/chat_message.dart';
+import '../data/models/tool_call.dart';
 import 'connection_provider.dart';
 
 class ChatState {
@@ -67,6 +68,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
         _appendThinkingToken(thought);
         break;
 
+      case 'tool.start':
+      case 'tool.call':
+        if (notification.params is Map<String, dynamic>) {
+          final toolCall = ToolCall.fromJson(notification.params as Map<String, dynamic>);
+          _onToolStarted(toolCall);
+        }
+        break;
+
+      case 'tool.output':
+      case 'tool.stream':
+        final toolId = notification.params?['id'] as String? ?? '';
+        final output = notification.params?['output'] as String? ?? '';
+        _onToolOutput(toolId, output);
+        break;
+
+      case 'tool.done':
+      case 'tool.finish':
+        final toolId = notification.params?['id'] as String? ?? '';
+        final statusStr = notification.params?['status'] as String? ?? 'done';
+        final duration = notification.params?['duration_ms'] as int?;
+        _onToolFinished(toolId, statusStr, duration);
+        break;
+
       case 'prompt.done':
       case 'turn.finish':
         _finalizeStreaming();
@@ -77,26 +101,73 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  void _appendStreamingToken(String token) {
+  void _onToolStarted(ToolCall tool) {
+    _ensureStreamingAssistantMessage();
+    final lastMsg = state.messages.last;
+    final updatedTools = [...lastMsg.toolCalls, tool];
+    final updatedMsg = lastMsg.copyWith(toolCalls: updatedTools);
+
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, state.messages.length - 1),
+        updatedMsg,
+      ],
+    );
+  }
+
+  void _onToolOutput(String toolId, String output) {
     if (state.messages.isEmpty) return;
     final lastMsg = state.messages.last;
+    if (lastMsg.role != MessageRole.assistant) return;
 
-    if (lastMsg.role == MessageRole.assistant && lastMsg.isStreaming) {
-      final updated = lastMsg.copyWith(
-        content: lastMsg.content + token,
-      );
-      state = state.copyWith(
-        messages: [
-          ...state.messages.sublist(0, state.messages.length - 1),
-          updated,
-        ],
-      );
-    } else {
-      // Start a new assistant message
+    final updatedTools = lastMsg.toolCalls.map((t) {
+      if (t.id == toolId || toolId.isEmpty) {
+        return t.copyWith(output: (t.output ?? '') + output);
+      }
+      return t;
+    }).toList();
+
+    final updatedMsg = lastMsg.copyWith(toolCalls: updatedTools);
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, state.messages.length - 1),
+        updatedMsg,
+      ],
+    );
+  }
+
+  void _onToolFinished(String toolId, String statusStr, int? durationMs) {
+    if (state.messages.isEmpty) return;
+    final lastMsg = state.messages.last;
+    if (lastMsg.role != MessageRole.assistant) return;
+
+    final updatedTools = lastMsg.toolCalls.map((t) {
+      if (t.id == toolId || toolId.isEmpty) {
+        return t.copyWith(
+          status: statusStr == 'error' ? ToolExecutionStatus.error : ToolExecutionStatus.done,
+          durationMs: durationMs,
+        );
+      }
+      return t;
+    }).toList();
+
+    final updatedMsg = lastMsg.copyWith(toolCalls: updatedTools);
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, state.messages.length - 1),
+        updatedMsg,
+      ],
+    );
+  }
+
+  void _ensureStreamingAssistantMessage() {
+    if (state.messages.isEmpty ||
+        state.messages.last.role != MessageRole.assistant ||
+        !state.messages.last.isStreaming) {
       final newMsg = ChatMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         role: MessageRole.assistant,
-        content: token,
+        content: '',
         timestamp: DateTime.now(),
         isStreaming: true,
       );
@@ -106,21 +177,34 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  void _appendThinkingToken(String thought) {
-    if (state.messages.isEmpty) return;
+  void _appendStreamingToken(String token) {
+    _ensureStreamingAssistantMessage();
     final lastMsg = state.messages.last;
 
-    if (lastMsg.role == MessageRole.assistant && lastMsg.isStreaming) {
-      final updated = lastMsg.copyWith(
-        thought: (lastMsg.thought ?? '') + thought,
-      );
-      state = state.copyWith(
-        messages: [
-          ...state.messages.sublist(0, state.messages.length - 1),
-          updated,
-        ],
-      );
-    }
+    final updated = lastMsg.copyWith(
+      content: lastMsg.content + token,
+    );
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, state.messages.length - 1),
+        updated,
+      ],
+    );
+  }
+
+  void _appendThinkingToken(String thought) {
+    _ensureStreamingAssistantMessage();
+    final lastMsg = state.messages.last;
+
+    final updated = lastMsg.copyWith(
+      thought: (lastMsg.thought ?? '') + thought,
+    );
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, state.messages.length - 1),
+        updated,
+      ],
+    );
   }
 
   void _finalizeStreaming() {
@@ -157,7 +241,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final conn = _ref.read(connectionProvider);
     if (!conn.status.isConnected) {
-      // Fallback offline notification
       final offlineWarning = ChatMessage(
         id: 'sys_${DateTime.now().millisecondsSinceEpoch}',
         role: MessageRole.system,

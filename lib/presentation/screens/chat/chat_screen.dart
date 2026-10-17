@@ -4,8 +4,12 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/haptics.dart';
 import '../../../data/models/chat_message.dart';
+import '../../../state/approval_provider.dart';
 import '../../../state/chat_provider.dart';
+import '../../widgets/approval_sheet.dart';
+import '../../widgets/tool_accordion.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -43,6 +47,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _textController.text;
     if (text.trim().isEmpty) return;
 
+    AppHaptics.medium();
     ref.read(chatProvider.notifier).sendMessage(text);
     _textController.clear();
     _scrollToBottom();
@@ -54,6 +59,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final messages = chatState.messages;
 
     ref.listen(chatProvider, (_, __) => _scrollToBottom());
+
+    // Auto-surface Approval Modal Sheet when a pending approval arrives
+    ref.listen(approvalProvider, (prev, next) {
+      if (next.hasPending && (prev == null || prev.count < next.count)) {
+        final latest = next.pendingApprovals.last;
+        ApprovalSheet.show(context, latest);
+      }
+    });
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -173,7 +186,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.85,
+            maxWidth: MediaQuery.of(context).size.width * 0.88,
           ),
           child: Container(
             padding: const EdgeInsets.all(12),
@@ -217,6 +230,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ],
                 ),
 
+                // Tool Execution Accordions (DESIGN.md & PRD 4: Collapsible Accordion Tools)
+                if (msg.toolCalls.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...msg.toolCalls.map((tool) => ToolAccordion(toolCall: tool)),
+                ],
+
                 // Reasoning Stream (if present)
                 if (msg.thought != null && msg.thought!.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -235,20 +254,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ],
 
-                const SizedBox(height: 6),
-
-                // Message Content
-                SelectableText(
-                  msg.content,
-                  style: isUser
-                      ? AppTypography.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textPrimary,
-                        )
-                      : AppTypography.mono(
-                          fontSize: 14,
-                          color: AppColors.textPrimary,
-                        ),
-                ),
+                if (msg.content.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  SelectableText(
+                    msg.content,
+                    style: isUser
+                        ? AppTypography.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textPrimary,
+                          )
+                        : AppTypography.mono(
+                            fontSize: 14,
+                            color: AppColors.textPrimary,
+                          ),
+                  ),
+                ],
 
                 if (msg.isStreaming) ...[
                   const SizedBox(height: 4),
