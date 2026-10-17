@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/network/connection_status.dart';
@@ -6,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/haptics.dart';
 import '../../data/models/project_tree_node.dart';
+import '../../data/models/session.dart';
 import '../../state/account_provider.dart';
 import '../../state/bots_provider.dart';
 import '../../state/chat_provider.dart';
@@ -382,58 +384,27 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                     )
                   else
                     Padding(
-                      padding: const EdgeInsets.only(left: 14),
+                      padding: const EdgeInsets.only(left: 6),
                       child: Column(
                         children: nodeSessions.map((s) {
                           final String sid = s is ProjectTreeSession ? s.id : s.id;
                           final String stitle = s is ProjectTreeSession ? s.title : s.title;
+                          final DateTime? sstarted = s is ProjectTreeSession
+                              ? s.startedAt
+                              : (s is HermesSession ? s.createdAt : null);
+                          final int smcount = s is ProjectTreeSession
+                              ? s.messageCount
+                              : (s is HermesSession ? s.messageCount : 0);
                           final isActive = sid == sessionState.activeSessionId;
 
-                          return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 1),
-                            decoration: BoxDecoration(
-                              color: isActive ? AppColors.surfaceHover : Colors.transparent,
-                              borderRadius: AppSpacing.roundedSm,
-                              border: Border.all(
-                                color: isActive ? AppColors.borderHighlight : Colors.transparent,
-                              ),
-                            ),
-                            child: ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                              leading: Container(
-                                width: 5,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: isActive ? AppColors.ok : AppColors.textMuted,
-                                ),
-                              ),
-                              title: Text(
-                                stitle,
-                                style: AppTypography.textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                                  color: isActive ? AppColors.primary : AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              onTap: () async {
-                                AppHaptics.light();
-                                widget.onClose?.call();
-                                final result = await ref.read(sessionProvider.notifier).resumeSession(sid);
-                                final runtimeId = result['session_id'] as String? ?? sid;
-                                final rawMessages = result['messages'] as List? ?? [];
-                                ref.read(chatProvider.notifier).loadResumedSession(
-                                      runtimeId,
-                                      rawMessages,
-                                      title: stitle,
-                                    );
-                                ref.read(activeTabProvider.notifier).state = 0;
-                              },
-                            ),
+                          return _SidebarSessionRow(
+                            key: ValueKey(sid),
+                            sessionId: sid,
+                            title: stitle,
+                            startedAt: sstarted,
+                            messageCount: smcount,
+                            isActive: isActive,
+                            onClose: widget.onClose,
                           );
                         }).toList(),
                       ),
@@ -487,51 +458,18 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                 ),
                 if (_expandedNodeIds.contains('gateway_sessions'))
                   Padding(
-                    padding: const EdgeInsets.only(left: 14),
+                    padding: const EdgeInsets.only(left: 6),
                     child: Column(
                       children: allSessions.map((session) {
                         final isActive = session.id == sessionState.activeSessionId;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(vertical: 1),
-                          decoration: BoxDecoration(
-                            color: isActive ? AppColors.surfaceHover : Colors.transparent,
-                            borderRadius: AppSpacing.roundedSm,
-                          ),
-                          child: ListTile(
-                            dense: true,
-                            visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                            leading: Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isActive ? AppColors.ok : AppColors.textMuted,
-                              ),
-                            ),
-                            title: Text(
-                              session.title,
-                              style: AppTypography.textTheme.bodySmall?.copyWith(
-                                fontSize: 11,
-                                color: isActive ? AppColors.primary : AppColors.textSecondary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onTap: () async {
-                              AppHaptics.light();
-                              widget.onClose?.call();
-                              final result = await ref.read(sessionProvider.notifier).resumeSession(session.id);
-                              final runtimeId = result['session_id'] as String? ?? session.id;
-                              final rawMessages = result['messages'] as List? ?? [];
-                              ref.read(chatProvider.notifier).loadResumedSession(
-                                    runtimeId,
-                                    rawMessages,
-                                    title: session.title,
-                                  );
-                              ref.read(activeTabProvider.notifier).state = 0;
-                            },
-                          ),
+                        return _SidebarSessionRow(
+                          key: ValueKey(session.id),
+                          sessionId: session.id,
+                          title: session.title,
+                          startedAt: session.createdAt,
+                          messageCount: session.messageCount,
+                          isActive: isActive,
+                          onClose: widget.onClose,
                         );
                       }).toList(),
                     ),
@@ -811,6 +749,391 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// SIDEBAR SESSION ROW (Hover 3-Dots & Hermes Desktop-Parity Active State)
+// ─────────────────────────────────────────────────────────────
+class _SidebarSessionRow extends ConsumerStatefulWidget {
+  final String sessionId;
+  final String title;
+  final DateTime? startedAt;
+  final int messageCount;
+  final bool isActive;
+  final VoidCallback? onClose;
+
+  const _SidebarSessionRow({
+    super.key,
+    required this.sessionId,
+    required this.title,
+    this.startedAt,
+    this.messageCount = 0,
+    required this.isActive,
+    this.onClose,
+  });
+
+  @override
+  ConsumerState<_SidebarSessionRow> createState() => _SidebarSessionRowState();
+}
+
+class _SidebarSessionRowState extends ConsumerState<_SidebarSessionRow> {
+  bool _isHovered = false;
+
+  String _formatTime(DateTime? dt) {
+    if (dt == null) return 'now';
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.month}/${dt.day}';
+  }
+
+  void _showRenameDialog(BuildContext context) {
+    final controller = TextEditingController(text: widget.title);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: AppSpacing.roundedMd,
+          side: BorderSide(color: AppColors.border),
+        ),
+        title: Text('Rename Session', style: AppTypography.textTheme.titleMedium),
+        content: TextField(
+          controller: controller,
+          style: AppTypography.mono(fontSize: 13),
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'New session title...',
+            filled: true,
+            fillColor: AppColors.background,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: AppTypography.mono(fontSize: 12, color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newTitle = controller.text.trim();
+              if (newTitle.isNotEmpty) {
+                ref.read(sessionProvider.notifier).renameSessionLocal(widget.sessionId, newTitle);
+                ref.read(chatProvider.notifier).updateTabTitleBySessionId(widget.sessionId, newTitle);
+              }
+              Navigator.of(ctx).pop();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.background,
+            ),
+            child: Text('Rename', style: AppTypography.mono(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: AppSpacing.roundedMd,
+          side: BorderSide(color: AppColors.border),
+        ),
+        title: Row(
+          children: [
+            const Icon(LucideIcons.alertTriangle, size: 18, color: AppColors.error),
+            const SizedBox(width: 8),
+            Text('Delete Session', style: AppTypography.textTheme.titleMedium),
+          ],
+        ),
+        content: Text(
+          'Delete "${widget.title}" permanently? This action cannot be undone.',
+          style: AppTypography.textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: AppTypography.mono(fontSize: 12, color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              AppHaptics.warning();
+              await ref.read(sessionProvider.notifier).deleteSession(widget.sessionId);
+              await ref.read(projectProvider.notifier).loadProjects();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Delete', style: AppTypography.mono(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleMenuAction(String action) async {
+    AppHaptics.light();
+    switch (action) {
+      case 'new_tab':
+        ref.read(chatProvider.notifier).createNewTab();
+        final result = await ref.read(sessionProvider.notifier).resumeSession(widget.sessionId);
+        final runtimeId = result['session_id'] as String? ?? widget.sessionId;
+        final rawMessages = result['messages'] as List? ?? [];
+        ref.read(chatProvider.notifier).loadResumedSession(runtimeId, rawMessages, title: widget.title);
+        ref.read(activeTabProvider.notifier).state = 0;
+        widget.onClose?.call();
+        break;
+      case 'open_terminal':
+        ref.read(chatProvider.notifier).sendMessage('/terminal');
+        ref.read(activeTabProvider.notifier).state = 0;
+        widget.onClose?.call();
+        break;
+      case 'rename':
+        _showRenameDialog(context);
+        break;
+      case 'pin':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Pinned session: ${widget.title}', style: AppTypography.textTheme.bodySmall),
+            backgroundColor: AppColors.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        break;
+      case 'mark_unread':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Marked as unread: ${widget.title}', style: AppTypography.textTheme.bodySmall),
+            backgroundColor: AppColors.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        break;
+      case 'copy_id':
+        await Clipboard.setData(ClipboardData(text: widget.sessionId));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Copied ID: ${widget.sessionId}', style: AppTypography.mono(fontSize: 11)),
+              backgroundColor: AppColors.surface,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        break;
+      case 'branch':
+        ref.read(chatProvider.notifier).sendMessage('/compact');
+        ref.read(activeTabProvider.notifier).state = 0;
+        widget.onClose?.call();
+        break;
+      case 'export':
+        await Clipboard.setData(ClipboardData(text: '# ${widget.title}\nSession ID: ${widget.sessionId}\nDate: ${widget.startedAt ?? DateTime.now()}'));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Exported session transcript to clipboard', style: AppTypography.textTheme.bodySmall),
+              backgroundColor: AppColors.surface,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        break;
+      case 'archive':
+        await ref.read(sessionProvider.notifier).deleteSession(widget.sessionId);
+        await ref.read(projectProvider.notifier).loadProjects();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Session archived', style: AppTypography.textTheme.bodySmall),
+              backgroundColor: AppColors.surface,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        break;
+      case 'delete':
+        _showDeleteConfirmDialog(context);
+        break;
+    }
+  }
+
+  PopupMenuItem<String> _buildMenuItem(
+    String value,
+    String label,
+    IconData icon, {
+    bool isDestructive = false,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 32,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 13,
+            color: isDestructive ? AppColors.error : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: AppTypography.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: isDestructive ? AppColors.error : AppColors.textPrimary,
+                fontWeight: isDestructive ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isActive
+        ? AppColors.surfaceHover
+        : (_isHovered ? AppColors.surface.withAlpha(150) : Colors.transparent);
+
+    final textColor = widget.isActive
+        ? AppColors.textPrimary
+        : (_isHovered ? AppColors.textPrimary : AppColors.textSecondary);
+
+    final dotColor = widget.isActive
+        ? AppColors.ok
+        : (_isHovered ? AppColors.textSecondary : AppColors.textMuted);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: AppSpacing.roundedSm,
+          border: Border.all(
+            color: widget.isActive ? AppColors.borderHighlight.withAlpha(140) : Colors.transparent,
+            width: 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: () async {
+            AppHaptics.light();
+            widget.onClose?.call();
+            final result = await ref.read(sessionProvider.notifier).resumeSession(widget.sessionId);
+            final runtimeId = result['session_id'] as String? ?? widget.sessionId;
+            final rawMessages = result['messages'] as List? ?? [];
+            ref.read(chatProvider.notifier).loadResumedSession(
+                  runtimeId,
+                  rawMessages,
+                  title: widget.title,
+                );
+            ref.read(activeTabProvider.notifier).state = 0;
+          },
+          borderRadius: AppSpacing.roundedSm,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Row(
+              children: [
+                // Bullet dot indicator
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: dotColor,
+                    boxShadow: widget.isActive
+                        ? [
+                            BoxShadow(
+                              color: AppColors.ok.withAlpha(140),
+                              blurRadius: 4,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Title
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: AppTypography.textTheme.bodySmall?.copyWith(
+                      fontSize: 11.5,
+                      fontWeight: widget.isActive ? FontWeight.w700 : FontWeight.w400,
+                      color: textColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+                // Trailing: Recency badge ("now", "12m", etc.)
+                if (widget.startedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      _formatTime(widget.startedAt),
+                      style: AppTypography.mono(
+                        fontSize: 9.5,
+                        color: widget.isActive ? AppColors.textSecondary : AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+
+                // Trailing: 3-dots kebab menu (visible on hover or when active, or on touch)
+                if (_isHovered || widget.isActive)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: PopupMenuButton<String>(
+                      icon: const Icon(LucideIcons.moreVertical, size: 14, color: AppColors.textMuted),
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Session options',
+                      color: AppColors.surface,
+                      elevation: 8,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: AppSpacing.roundedMd,
+                        side: BorderSide(color: AppColors.border),
+                      ),
+                      onSelected: _handleMenuAction,
+                      itemBuilder: (ctx) => [
+                        // Group 1: Window / Terminal
+                        _buildMenuItem('new_tab', 'New window / tab', LucideIcons.externalLink),
+                        _buildMenuItem('open_terminal', 'Open in terminal', LucideIcons.terminal),
+                        const PopupMenuDivider(height: 1),
+                        // Group 2: Session Management
+                        _buildMenuItem('rename', 'Rename...', LucideIcons.edit2),
+                        _buildMenuItem('pin', 'Pin', LucideIcons.pin),
+                        _buildMenuItem('mark_unread', 'Mark as unread', LucideIcons.mail),
+                        _buildMenuItem('copy_id', 'Copy ID', LucideIcons.copy),
+                        const PopupMenuDivider(height: 1),
+                        // Group 3: Version Control & Export
+                        _buildMenuItem('branch', 'Branch', LucideIcons.gitBranch),
+                        _buildMenuItem('export', 'Export', LucideIcons.download),
+                        const PopupMenuDivider(height: 1),
+                        // Group 4: Delete
+                        _buildMenuItem('delete', 'Delete', LucideIcons.trash2, isDestructive: true),
+                      ],
+                    ),
+                  )
+                else
+                  const SizedBox(width: 20),
+              ],
+            ),
+          ),
         ),
       ),
     );
