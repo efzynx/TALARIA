@@ -16,16 +16,23 @@ class HermesSession {
   });
 
   factory HermesSession.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic val) {
+      if (val == null) return DateTime.now();
+      if (val is num) {
+        return DateTime.fromMillisecondsSinceEpoch((val * 1000).toInt());
+      }
+      return DateTime.tryParse(val.toString()) ?? DateTime.now();
+    }
+
+    final createdAt = parseDate(json['created_at'] ?? json['started_at']);
+    final updatedAt = parseDate(json['updated_at'] ?? json['started_at']);
+
     return HermesSession(
       id: json['id'] as String? ?? json['session_id'] as String? ?? '',
       title: json['title'] as String? ?? 'Untitled Session',
       project: json['project'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null
-          ? DateTime.tryParse(json['updated_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
       messageCount: json['message_count'] as int? ?? 0,
     );
   }

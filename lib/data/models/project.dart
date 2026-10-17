@@ -17,9 +17,9 @@ class HermesProject {
 
   factory HermesProject.fromJson(Map<String, dynamic> json) {
     return HermesProject(
-      id: json['id'] as String? ?? json['name'] as String? ?? '',
-      name: json['name'] as String? ?? 'Untitled Project',
-      path: json['path'] as String? ?? '',
+      id: json['id'] as String? ?? json['slug'] as String? ?? json['name'] as String? ?? '',
+      name: json['name'] as String? ?? json['slug'] as String? ?? 'Untitled Project',
+      path: json['path'] as String? ?? json['cwd'] as String? ?? '',
       isActive: json['is_active'] as bool? ?? json['active'] as bool? ?? false,
       repoUrl: json['repo_url'] as String?,
       description: json['description'] as String?,

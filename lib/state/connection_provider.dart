@@ -9,12 +9,14 @@ import '../data/repositories/hermes_repository.dart';
 class ConnectionStateData {
   final ConnectionStatus status;
   final String serverUrl;
+  final String? resolvedUrl;
   final int? latencyMs;
   final String? errorMessage;
 
   const ConnectionStateData({
     required this.status,
     required this.serverUrl,
+    this.resolvedUrl,
     this.latencyMs,
     this.errorMessage,
   });
@@ -22,12 +24,14 @@ class ConnectionStateData {
   ConnectionStateData copyWith({
     ConnectionStatus? status,
     String? serverUrl,
+    String? resolvedUrl,
     int? latencyMs,
     String? errorMessage,
   }) {
     return ConnectionStateData(
       status: status ?? this.status,
       serverUrl: serverUrl ?? this.serverUrl,
+      resolvedUrl: resolvedUrl ?? this.resolvedUrl,
       latencyMs: latencyMs ?? this.latencyMs,
       errorMessage: errorMessage ?? this.errorMessage,
     );
@@ -60,7 +64,10 @@ class ConnectionNotifier extends StateNotifier<ConnectionStateData> {
     _client.updateServerUrl(savedUrl);
 
     _statusSub = _client.statusStream.listen((status) {
-      state = state.copyWith(status: status);
+      state = state.copyWith(
+        status: status,
+        resolvedUrl: _client.activeUri?.toString(),
+      );
     });
 
     _latencySub = _client.latencyStream.listen((latency) {

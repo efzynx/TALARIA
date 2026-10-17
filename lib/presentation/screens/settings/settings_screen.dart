@@ -258,6 +258,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     _buildDiagnosticRow('Status', conn.status.label),
+                    if (conn.resolvedUrl != null) ...[
+                      const Divider(color: AppColors.border, height: 16),
+                      _buildDiagnosticRow('Resolved Route', conn.resolvedUrl!),
+                    ],
                     const Divider(color: AppColors.border, height: 16),
                     _buildDiagnosticRow(
                       'Ping Latency',

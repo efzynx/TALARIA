@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'connection_status.dart';
+import 'hermes_url_resolver.dart';
 import 'json_rpc_message.dart';
 
 /// Client WebSocket JSON-RPC 2.0 untuk daemon hermes serve.
@@ -19,6 +20,7 @@ class JsonRpcClient {
   ];
 
   String _serverUrl;
+  Uri? _activeUri;
   WebSocketChannel? _channel;
   StreamSubscription? _channelSubscription;
 
@@ -45,6 +47,7 @@ class JsonRpcClient {
 
   // Getters
   String get serverUrl => _serverUrl;
+  Uri? get activeUri => _activeUri;
   ConnectionStatus get status => _status;
   int? get latencyMs => _latencyMs;
   Stream<ConnectionStatus> get statusStream => _statusController.stream;
@@ -75,7 +78,9 @@ class JsonRpcClient {
         : ConnectionStatus.connecting);
 
     try {
-      final uri = Uri.parse(_serverUrl);
+      final uri = await HermesUrlResolver.resolve(_serverUrl);
+      _activeUri = uri;
+      debugPrint('[JsonRpcClient] Connecting to WebSocket: $uri');
       final channel = WebSocketChannel.connect(uri);
       await channel.ready;
 
@@ -94,7 +99,7 @@ class JsonRpcClient {
       // Langsung lakukan ping awal untuk kalkulasi latency
       _sendPing();
     } catch (e) {
-      debugPrint('[JsonRpcClient] Connection error to $_serverUrl: $e');
+      debugPrint('[JsonRpcClient] Connection error to $_serverUrl (resolved: $_activeUri): $e');
       _cleanupChannel();
       _handleDisconnect();
     }

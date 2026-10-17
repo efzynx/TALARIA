@@ -109,6 +109,10 @@ class ConnectionPill extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildInfoRow('Endpoint', conn.serverUrl),
+              if (conn.resolvedUrl != null) ...[
+                const SizedBox(height: 8),
+                _buildInfoRow('WebSocket Route', conn.resolvedUrl!),
+              ],
               const SizedBox(height: 8),
               _buildInfoRow('Status', conn.status.label),
               if (conn.latencyMs != null) ...[

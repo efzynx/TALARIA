@@ -15,6 +15,10 @@ class HermesRepository {
       return response
           .map((item) => HermesSession.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList();
+    } else if (response is Map && response['sessions'] is List) {
+      return (response['sessions'] as List)
+          .map((item) => HermesSession.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
     }
     return [];
   }
@@ -57,6 +61,10 @@ class HermesRepository {
     final response = await _client.call('projects.list');
     if (response is List) {
       return response
+          .map((item) => HermesProject.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
+    } else if (response is Map && response['projects'] is List) {
+      return (response['projects'] as List)
           .map((item) => HermesProject.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList();
     }
