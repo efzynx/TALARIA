@@ -7,8 +7,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/haptics.dart';
 import '../../../data/models/session.dart';
+import '../../../state/chat_provider.dart';
 import '../../../state/connection_provider.dart';
+import '../../../state/project_provider.dart';
 import '../../../state/session_provider.dart';
+import '../../navigation/app_shell.dart';
 
 class SessionsScreen extends ConsumerWidget {
   const SessionsScreen({super.key});
@@ -51,18 +54,61 @@ class SessionsScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final title = titleController.text.trim();
-              if (title.isNotEmpty) {
-                ref.read(sessionProvider.notifier).createSession(title: title);
-              }
               Navigator.of(ctx).pop();
+              if (title.isNotEmpty) {
+                final activeProject = ref.read(projectProvider).activeProject;
+                final newSession = await ref.read(sessionProvider.notifier).createSession(
+                      title: title,
+                      project: activeProject?.name,
+                    );
+                if (newSession != null) {
+                  ref.read(chatProvider.notifier).startNewSession();
+                  ref.read(activeTabProvider.notifier).state = 0;
+                }
+              }
             },
             child: const Text('Create'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _resumeSession(
+    BuildContext context,
+    WidgetRef ref,
+    HermesSession session,
+  ) async {
+    AppHaptics.medium();
+    try {
+      final result = await ref.read(sessionProvider.notifier).resumeSession(session.id);
+      final runtimeId = result['session_id'] as String? ?? session.id;
+      final rawMessages = result['messages'] as List? ?? [];
+      ref.read(chatProvider.notifier).loadResumedSession(runtimeId, rawMessages);
+      ref.read(activeTabProvider.notifier).state = 0;
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Resumed: ${session.title}', style: AppTypography.textTheme.bodySmall),
+            backgroundColor: AppColors.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to resume: $e', style: AppTypography.textTheme.bodySmall),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -269,7 +315,7 @@ class SessionsScreen extends ConsumerWidget {
           ),
           onSelected: (val) {
             if (val == 'resume') {
-              ref.read(sessionProvider.notifier).resumeSession(session.id);
+              _resumeSession(context, ref, session);
             } else if (val == 'delete') {
               ref.read(sessionProvider.notifier).deleteSession(session.id);
             }
@@ -298,8 +344,7 @@ class SessionsScreen extends ConsumerWidget {
           ],
         ),
         onTap: () {
-          AppHaptics.light();
-          ref.read(sessionProvider.notifier).setActiveSession(session.id);
+          _resumeSession(context, ref, session);
         },
       ),
     );

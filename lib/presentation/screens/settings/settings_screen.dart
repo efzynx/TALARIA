@@ -7,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/haptics.dart';
 import '../../../state/chat_provider.dart';
 import '../../../state/connection_provider.dart';
+import '../../../state/model_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -17,8 +18,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _urlController;
+  late final TextEditingController _customModelController;
   String _selectedReasoning = 'high';
-  String _selectedModel = 'custom/AG-gemini';
+  String? _selectedModel;
 
   static const List<String> _reasoningOptions = [
     'none',
@@ -28,23 +30,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     'ultra',
   ];
 
-  static const List<String> _commonModels = [
-    'custom/AG-gemini',
-    'anthropic/claude-3-7-sonnet',
-    'openai/gpt-4o',
-    'openai/o3-mini',
-  ];
-
   @override
   void initState() {
     super.initState();
     final currentUrl = ref.read(connectionProvider).serverUrl;
     _urlController = TextEditingController(text: currentUrl);
+    _customModelController = TextEditingController();
   }
 
   @override
   void dispose() {
     _urlController.dispose();
+    _customModelController.dispose();
     super.dispose();
   }
 
@@ -63,31 +60,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  void _updateModelConfig() {
-    AppHaptics.light();
-    ref.read(connectionProvider.notifier).call('model.options', {
-      'model': _selectedModel,
-      'reasoning_effort': _selectedReasoning,
-    }).catchError((e) {
-      // offline or unsupported
-      return null;
-    });
+  Future<void> _updateModelConfig(String modelToSet) async {
+    final model = modelToSet.trim();
+    if (model.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Model config set: $_selectedModel ($_selectedReasoning)',
-          style: AppTypography.textTheme.bodySmall,
-        ),
-        backgroundColor: AppColors.surface,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    AppHaptics.light();
+    try {
+      await ref.read(modelConfigProvider.notifier).setModel(
+            model,
+            reasoningEffort: _selectedReasoning,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Model configured: $model ($_selectedReasoning)',
+              style: AppTypography.textTheme.bodySmall,
+            ),
+            backgroundColor: AppColors.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to set model: $e', style: AppTypography.textTheme.bodySmall),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final conn = ref.watch(connectionProvider);
+    final modelState = ref.watch(modelConfigProvider);
+    final availableModels = modelState.config.allAvailableModels;
+
+    final currentActiveModel = modelState.config.activeModel;
+    final selectedModel = _selectedModel ?? (availableModels.contains(currentActiveModel) ? currentActiveModel : (availableModels.isNotEmpty ? availableModels.first : currentActiveModel));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -156,7 +171,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             const SizedBox(height: 16),
 
-            // Model & Reasoning Configuration Card
+            // Real Model & Reasoning Configuration Card
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -167,38 +182,112 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       children: [
                         const Icon(LucideIcons.cpu, size: 18, color: AppColors.primary),
                         const SizedBox(width: 8),
-                        Text(
-                          'LLM & Reasoning Engine',
-                          style: AppTypography.textTheme.titleMedium,
+                        Expanded(
+                          child: Text(
+                            'LLM & Reasoning Engine',
+                            style: AppTypography.textTheme.titleMedium,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(LucideIcons.refreshCw, size: 16),
+                          tooltip: 'Sync Models from Hermes',
+                          onPressed: conn.status.isConnected
+                              ? () {
+                                  AppHaptics.light();
+                                  ref.read(modelConfigProvider.notifier).fetchModelOptions();
+                                }
+                              : null,
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Configure active model and reasoning intensity.',
+                      'Live active models provided by Hermes Agent daemon.',
                       style: AppTypography.textTheme.bodySmall?.copyWith(
                         color: AppColors.textMuted,
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          'CURRENT ACTIVE: ',
+                          style: AppTypography.mono(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        Text(
+                          currentActiveModel,
+                          style: AppTypography.mono(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (modelState.config.activeProvider.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            'PROVIDER: ',
+                            style: AppTypography.mono(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          Text(
+                            modelState.config.activeProvider,
+                            style: AppTypography.mono(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.thinking,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
-                      'ACTIVE MODEL',
+                      'SELECT MODEL',
                       style: AppTypography.mono(fontSize: 10, color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
-                      value: _selectedModel,
+                      value: availableModels.contains(selectedModel) ? selectedModel : null,
                       dropdownColor: AppColors.surface,
                       style: AppTypography.mono(fontSize: 12, color: AppColors.textPrimary),
                       decoration: const InputDecoration(
                         contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
-                      items: _commonModels.map((m) {
-                        return DropdownMenuItem(value: m, child: Text(m));
+                      hint: Text(
+                        availableModels.isEmpty ? 'No models loaded' : 'Choose model',
+                        style: AppTypography.mono(fontSize: 12, color: AppColors.textMuted),
+                      ),
+                      items: availableModels.map((m) {
+                        return DropdownMenuItem(
+                          value: m,
+                          child: Text(
+                            m,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
                       }).toList(),
                       onChanged: (val) {
-                        if (val != null) setState(() => _selectedModel = val);
+                        if (val != null) {
+                          setState(() => _selectedModel = val);
+                        }
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'OR CUSTOM MODEL NAME',
+                      style: AppTypography.mono(fontSize: 10, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _customModelController,
+                      style: AppTypography.mono(fontSize: 12),
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. AG-gemini, claude-3-7-sonnet',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -226,10 +315,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 14),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
+                      child: ElevatedButton.icon(
                         icon: const Icon(LucideIcons.save, size: 16),
                         label: const Text('Apply Model Settings'),
-                        onPressed: conn.status.isConnected ? _updateModelConfig : null,
+                        onPressed: conn.status.isConnected
+                            ? () {
+                                final custom = _customModelController.text.trim();
+                                final target = custom.isNotEmpty ? custom : selectedModel;
+                                _updateModelConfig(target);
+                              }
+                            : null,
                       ),
                     ),
                   ],

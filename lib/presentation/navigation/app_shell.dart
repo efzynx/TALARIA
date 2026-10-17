@@ -11,15 +11,10 @@ import '../screens/sessions/sessions_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../widgets/connection_pill.dart';
 
-class AppShell extends ConsumerStatefulWidget {
+final activeTabProvider = StateProvider<int>((ref) => 0);
+
+class AppShell extends ConsumerWidget {
   const AppShell({super.key});
-
-  @override
-  ConsumerState<AppShell> createState() => _AppShellState();
-}
-
-class _AppShellState extends ConsumerState<AppShell> {
-  int _selectedIndex = 0;
 
   static const List<Widget> _screens = [
     ChatScreen(),
@@ -38,7 +33,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedIndex = ref.watch(activeTabProvider);
     final approvalState = ref.watch(approvalProvider);
     final pendingCount = approvalState.count;
 
@@ -47,20 +43,25 @@ class _AppShellState extends ConsumerState<AppShell> {
         final isDesktop = constraints.maxWidth >= 720;
 
         if (isDesktop) {
-          return _buildDesktopLayout(pendingCount);
+          return _buildDesktopLayout(context, ref, selectedIndex, pendingCount);
         } else {
-          return _buildMobileLayout(pendingCount);
+          return _buildMobileLayout(context, ref, selectedIndex, pendingCount);
         }
       },
     );
   }
 
   /// Mobile Layout: Top AppBar with ConnectionPill + Bottom Navigation Bar
-  Widget _buildMobileLayout(int pendingCount) {
+  Widget _buildMobileLayout(
+    BuildContext context,
+    WidgetRef ref,
+    int selectedIndex,
+    int pendingCount,
+  ) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _titles[_selectedIndex],
+          _titles[selectedIndex],
           style: AppTypography.mono(
             fontSize: 14,
             fontWeight: FontWeight.w700,
@@ -82,12 +83,12 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ),
       body: IndexedStack(
-        index: _selectedIndex,
+        index: selectedIndex,
         children: _screens,
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (idx) => ref.read(activeTabProvider.notifier).state = idx,
         destinations: [
           const NavigationDestination(
             icon: Icon(LucideIcons.messageSquare),
@@ -122,14 +123,19 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   /// Desktop Layout: NavigationRail on left + Header with ConnectionPill + Content
-  Widget _buildDesktopLayout(int pendingCount) {
+  Widget _buildDesktopLayout(
+    BuildContext context,
+    WidgetRef ref,
+    int selectedIndex,
+    int pendingCount,
+  ) {
     return Scaffold(
       body: Row(
         children: [
           // Navigation Rail
           NavigationRail(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+            selectedIndex: selectedIndex,
+            onDestinationSelected: (idx) => ref.read(activeTabProvider.notifier).state = idx,
             labelType: NavigationRailLabelType.all,
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -216,7 +222,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _titles[_selectedIndex],
+                        _titles[selectedIndex],
                         style: AppTypography.mono(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -231,7 +237,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 // Screen Content
                 Expanded(
                   child: IndexedStack(
-                    index: _selectedIndex,
+                    index: selectedIndex,
                     children: _screens,
                   ),
                 ),

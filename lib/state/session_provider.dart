@@ -75,14 +75,24 @@ class SessionNotifier extends StateNotifier<SessionState> {
     }
   }
 
-  Future<void> resumeSession(String sessionId) async {
+  Future<Map<String, dynamic>> resumeSession(String sessionId) async {
     try {
       final repo = _ref.read(hermesRepositoryProvider);
-      await repo.resumeSession(sessionId);
-      state = state.copyWith(activeSessionId: sessionId);
+      final res = await repo.resumeSession(sessionId);
+      final runtimeId = res['session_id'] as String? ?? sessionId;
+      state = state.copyWith(activeSessionId: runtimeId);
+      return res;
     } catch (e) {
       state = state.copyWith(error: e.toString());
+      rethrow;
     }
+  }
+
+  void addSession(HermesSession session) {
+    state = state.copyWith(
+      sessions: [session, ...state.sessions.where((s) => s.id != session.id)],
+      activeSessionId: session.id,
+    );
   }
 
   Future<void> deleteSession(String sessionId) async {

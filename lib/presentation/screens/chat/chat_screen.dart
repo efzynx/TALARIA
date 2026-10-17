@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -73,6 +74,67 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Session Info & Action Bar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: const BoxDecoration(
+                color: AppColors.surface,
+                border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    chatState.activeSessionId != null ? LucideIcons.radio : LucideIcons.plusCircle,
+                    size: 14,
+                    color: chatState.activeSessionId != null ? AppColors.ok : AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      chatState.activeSessionId != null
+                          ? 'SESSION: ${chatState.activeSessionId}'
+                          : 'SESSION: NEW (DEFAULT AUTO-CREATE)',
+                      style: AppTypography.mono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: chatState.activeSessionId != null
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (chatState.activeSessionId != null)
+                    InkWell(
+                      onTap: () {
+                        AppHaptics.light();
+                        ref.read(chatProvider.notifier).startNewSession();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: AppSpacing.roundedSm,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(LucideIcons.plus, size: 12, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              'New',
+                              style: AppTypography.mono(fontSize: 10, color: AppColors.primary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
             // List of Messages
             Expanded(
               child: messages.isEmpty
@@ -256,17 +318,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
                 if (msg.content.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  SelectableText(
-                    msg.content,
-                    style: isUser
-                        ? AppTypography.textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textPrimary,
-                          )
-                        : AppTypography.mono(
-                            fontSize: 14,
-                            color: AppColors.textPrimary,
-                          ),
-                  ),
+                  if (isUser)
+                    SelectableText(
+                      msg.content,
+                      style: AppTypography.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    )
+                  else
+                    MarkdownBody(
+                      data: msg.content,
+                      selectable: true,
+                      styleSheet: _buildMarkdownStyleSheet(),
+                    ),
                 ],
 
                 if (msg.isStreaming) ...[
@@ -281,6 +345,67 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  MarkdownStyleSheet _buildMarkdownStyleSheet() {
+    return MarkdownStyleSheet(
+      p: AppTypography.textTheme.bodyMedium?.copyWith(
+        color: AppColors.textPrimary,
+        height: 1.5,
+      ),
+      h1: AppTypography.textTheme.headlineMedium?.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w700,
+      ),
+      h2: AppTypography.textTheme.titleLarge?.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+      h3: AppTypography.textTheme.titleMedium?.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+      h4: AppTypography.textTheme.bodyLarge?.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+      code: AppTypography.mono(
+        fontSize: 12,
+        color: AppColors.primary,
+        height: 1.4,
+      ),
+      codeblockPadding: const EdgeInsets.all(12),
+      codeblockDecoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: AppSpacing.roundedSm,
+        border: Border.all(color: AppColors.border),
+      ),
+      blockquotePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      blockquoteDecoration: BoxDecoration(
+        color: AppColors.background.withAlpha(120),
+        borderRadius: AppSpacing.roundedSm,
+        border: const Border(
+          left: BorderSide(color: AppColors.primary, width: 3),
+        ),
+      ),
+      listBullet: AppTypography.textTheme.bodyMedium?.copyWith(
+        color: AppColors.primary,
+      ),
+      a: AppTypography.textTheme.bodyMedium?.copyWith(
+        color: AppColors.primary,
+        decoration: TextDecoration.underline,
+      ),
+      tableBorder: TableBorder.all(color: AppColors.border, width: 1),
+      tableHead: AppTypography.mono(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: AppColors.primary,
+      ),
+      tableBody: AppTypography.mono(
+        fontSize: 12,
+        color: AppColors.textPrimary,
       ),
     );
   }

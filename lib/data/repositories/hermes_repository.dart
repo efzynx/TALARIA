@@ -23,16 +23,27 @@ class HermesRepository {
     return [];
   }
 
-  Future<HermesSession> createSession({String? title, String? project}) async {
+  Future<HermesSession> createSession({
+    String? title,
+    String? cwd,
+    String? project,
+  }) async {
     final response = await _client.call('session.create', {
       if (title != null) 'title': title,
-      if (project != null) 'project': project,
+      if (cwd != null) 'cwd': cwd,
+      if (cwd != null) 'cwd_explicit': true,
     });
     return HermesSession.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
-  Future<void> resumeSession(String sessionId) async {
-    await _client.call('session.resume', {'session_id': sessionId});
+  Future<Map<String, dynamic>> resumeSession(String sessionId) async {
+    final response = await _client.call('session.resume', {
+      'session_id': sessionId,
+    });
+    if (response is Map) {
+      return Map<String, dynamic>.from(response);
+    }
+    return {};
   }
 
   Future<void> deleteSession(String sessionId) async {
@@ -40,10 +51,10 @@ class HermesRepository {
   }
 
   // --- PROMPTS ---
-  Future<dynamic> submitPrompt(String prompt, {String? sessionId}) async {
+  Future<dynamic> submitPrompt(String text, {required String sessionId}) async {
     return await _client.call('prompt.submit', {
-      'prompt': prompt,
-      if (sessionId != null) 'session_id': sessionId,
+      'session_id': sessionId,
+      'text': text,
     });
   }
 
@@ -59,20 +70,22 @@ class HermesRepository {
   // --- PROJECTS ---
   Future<List<HermesProject>> listProjects() async {
     final response = await _client.call('projects.list');
-    if (response is List) {
-      return response
-          .map((item) => HermesProject.fromJson(Map<String, dynamic>.from(item as Map)))
-          .toList();
-    } else if (response is Map && response['projects'] is List) {
+    if (response is Map && response['projects'] is List) {
+      final activeId = response['active_id'] as String?;
       return (response['projects'] as List)
+          .map((item) =>
+              HermesProject.fromJson(Map<String, dynamic>.from(item as Map), activeId: activeId))
+          .toList();
+    } else if (response is List) {
+      return response
           .map((item) => HermesProject.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList();
     }
     return [];
   }
 
-  Future<void> setActiveProject(String projectPath) async {
-    await _client.call('projects.set_active', {'path': projectPath});
+  Future<void> setActiveProject(String projectId) async {
+    await _client.call('projects.set_active', {'id': projectId});
   }
 
   Future<HermesProject> createProject(String name, String path) async {
@@ -83,7 +96,24 @@ class HermesRepository {
     return HermesProject.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
-  // --- CONFIG ---
+  // --- MODELS & CONFIG ---
+  Future<HermesConfig> getModelOptions() async {
+    try {
+      final response = await _client.call('model.options', {});
+      if (response is Map) {
+        return HermesConfig.fromModelOptions(Map<String, dynamic>.from(response));
+      }
+    } catch (_) {}
+    return const HermesConfig();
+  }
+
+  Future<void> setModel(String model, {String? reasoningEffort}) async {
+    await _client.call('model.options', {
+      'model': model,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
+    });
+  }
+
   Future<HermesConfig> getConfig() async {
     final response = await _client.call('config.get');
     if (response is Map) {

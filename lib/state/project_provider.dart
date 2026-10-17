@@ -62,14 +62,24 @@ class ProjectNotifier extends StateNotifier<ProjectState> {
     }
   }
 
-  Future<void> setActiveProject(HermesProject project) async {
+  Future<void> setActiveProject(HermesProject? project) async {
     try {
       final repo = _ref.read(hermesRepositoryProvider);
-      await repo.setActiveProject(project.path);
-      state = state.copyWith(
-        activeProject: project,
-        projects: state.projects.map((p) => p.copyWith(isActive: p.id == project.id)).toList(),
-      );
+      if (project != null) {
+        await repo.setActiveProject(project.id);
+        state = state.copyWith(
+          activeProject: project,
+          projects: state.projects
+              .map((p) => p.copyWith(isActive: p.id == project.id))
+              .toList(),
+        );
+      } else {
+        await repo.setActiveProject('');
+        state = state.copyWith(
+          activeProject: null,
+          projects: state.projects.map((p) => p.copyWith(isActive: false)).toList(),
+        );
+      }
     } catch (e) {
       state = state.copyWith(error: e.toString());
     }

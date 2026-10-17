@@ -5,6 +5,8 @@ import '../core/network/json_rpc_message.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/tool_call.dart';
 import 'connection_provider.dart';
+import 'project_provider.dart';
+import 'session_provider.dart';
 
 class ChatState {
   final List<ChatMessage> messages;
@@ -255,11 +257,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     try {
-      final client = _ref.read(connectionProvider.notifier);
-      await client.call('prompt.submit', {
-        'prompt': trimmed,
-        if (state.activeSessionId != null) 'session_id': state.activeSessionId,
-      });
+      final repo = _ref.read(hermesRepositoryProvider);
+
+      // If no active session, automatically create a new session
+      String? sessionId = state.activeSessionId;
+      if (sessionId == null || sessionId.isEmpty) {
+        final activeProject = _ref.read(projectProvider).activeProject;
+        final title = trimmed.length > 40 ? '${trimmed.substring(0, 40)}...' : trimmed;
+        final newSession = await repo.createSession(
+          title: title,
+          cwd: activeProject?.path,
+          project: activeProject?.name,
+        );
+        sessionId = newSession.id;
+        state = state.copyWith(activeSessionId: sessionId);
+        _ref.read(sessionProvider.notifier).addSession(newSession);
+      }
+
+      await repo.submitPrompt(trimmed, sessionId: sessionId);
     } catch (e) {
       final errorMsg = ChatMessage(
         id: 'err_${DateTime.now().millisecondsSinceEpoch}',
@@ -272,6 +287,70 @@ class ChatNotifier extends StateNotifier<ChatState> {
         isThinking: false,
       );
     }
+  }
+
+  void loadResumedSession(String sessionId, List<dynamic> rawMessages) {
+    final List<ChatMessage> parsed = [];
+    for (final raw in rawMessages) {
+      if (raw is Map) {
+        final roleStr = raw['role']?.toString().toLowerCase() ?? 'user';
+        final role = roleStr == 'assistant'
+            ? MessageRole.assistant
+            : (roleStr == 'system' ? MessageRole.system : MessageRole.user);
+        final content = raw['content']?.toString() ?? raw['text']?.toString() ?? '';
+        final thought = raw['thought']?.toString() ?? raw['reasoning']?.toString();
+
+        DateTime parseTs(dynamic val) {
+          if (val is num) {
+            return DateTime.fromMillisecondsSinceEpoch((val * 1000).toInt());
+          }
+          if (val != null) {
+            return DateTime.tryParse(val.toString()) ?? DateTime.now();
+          }
+          return DateTime.now();
+        }
+
+        parsed.add(ChatMessage(
+          id: raw['row_id']?.toString() ??
+              raw['id']?.toString() ??
+              'msg_${DateTime.now().microsecondsSinceEpoch}',
+          role: role,
+          content: content,
+          thought: thought,
+          timestamp: parseTs(raw['timestamp']),
+        ));
+      }
+    }
+
+    state = state.copyWith(
+      activeSessionId: sessionId,
+      messages: parsed.isNotEmpty
+          ? parsed
+          : [
+              ChatMessage(
+                id: 'resumed_empty',
+                role: MessageRole.system,
+                content: 'Resumed session $sessionId.',
+                timestamp: DateTime.now(),
+              ),
+            ],
+      isThinking: false,
+    );
+  }
+
+  void startNewSession() {
+    state = state.copyWith(
+      activeSessionId: null,
+      messages: [
+        ChatMessage(
+          id: 'new_session_init',
+          role: MessageRole.system,
+          content: 'New session started. Send a prompt to begin.',
+          timestamp: DateTime.now(),
+        ),
+      ],
+      isThinking: false,
+    );
   }
 
   void clearMessages() {

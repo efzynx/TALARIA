@@ -122,6 +122,79 @@ class ProjectsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
 
+              // Active Workspace Banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: AppSpacing.roundedMd,
+                  border: Border.all(
+                    color: projectState.activeProject != null
+                        ? AppColors.primary.withAlpha(120)
+                        : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      projectState.activeProject != null
+                          ? LucideIcons.folderCheck
+                          : LucideIcons.home,
+                      size: 18,
+                      color: projectState.activeProject != null
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            projectState.activeProject != null
+                                ? 'ACTIVE: ${projectState.activeProject!.name.toUpperCase()}'
+                                : 'ACTIVE: DEFAULT HOME (~)',
+                            style: AppTypography.mono(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: projectState.activeProject != null
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            projectState.activeProject != null
+                                ? projectState.activeProject!.path
+                                : 'Sessions start in daemon default user directory.',
+                            style: AppTypography.textTheme.bodySmall?.copyWith(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (projectState.activeProject != null)
+                      TextButton(
+                        onPressed: () {
+                          AppHaptics.light();
+                          ref.read(projectProvider.notifier).setActiveProject(null);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Switched to default home workspace'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: const Text('Reset', style: TextStyle(fontSize: 11)),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
               if (projectState.isLoading)
                 const LinearProgressIndicator(
                   backgroundColor: AppColors.surface,
@@ -186,6 +259,28 @@ class ProjectsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _selectProject(BuildContext context, WidgetRef ref, HermesProject project, bool isActive) {
+    AppHaptics.light();
+    if (isActive) {
+      ref.read(projectProvider.notifier).setActiveProject(null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deselected project. Using default home workspace.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ref.read(projectProvider.notifier).setActiveProject(project);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Active workspace set to ${project.name} (${project.path})'),
+          backgroundColor: AppColors.surface,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Widget _buildProjectCard(
@@ -270,16 +365,10 @@ class ProjectsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   minimumSize: const Size(60, 32),
                 ),
-                onPressed: () {
-                  AppHaptics.light();
-                  ref.read(projectProvider.notifier).setActiveProject(project);
-                },
+                onPressed: () => _selectProject(context, ref, project, isActive),
                 child: const Text('Select', style: TextStyle(fontSize: 12)),
               ),
-        onTap: () {
-          AppHaptics.light();
-          ref.read(projectProvider.notifier).setActiveProject(project);
-        },
+        onTap: () => _selectProject(context, ref, project, isActive),
       ),
     );
   }
