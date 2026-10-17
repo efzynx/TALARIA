@@ -23,7 +23,7 @@ class ProjectTreeSession {
     }
 
     return ProjectTreeSession(
-      id: json['id'] as String? ?? 'sess_${DateTime.now().millisecondsSinceEpoch}',
+      id: json['id'] as String? ?? json['session_id'] as String? ?? 'sess_${DateTime.now().millisecondsSinceEpoch}',
       title: json['title'] as String? ?? 'Untitled Session',
       preview: json['preview'] as String?,
       messageCount: (json['message_count'] as num?)?.toInt() ?? 0,
@@ -40,6 +40,7 @@ class ProjectTreeNode {
   final bool isNoProject;
   final int sessionCount;
   final List<ProjectTreeSession> sessions;
+  final List<String> sessionIds;
 
   const ProjectTreeNode({
     required this.id,
@@ -49,6 +50,7 @@ class ProjectTreeNode {
     this.isNoProject = false,
     this.sessionCount = 0,
     this.sessions = const [],
+    this.sessionIds = const [],
   });
 
   factory ProjectTreeNode.fromJson(Map<String, dynamic> json) {
@@ -75,6 +77,12 @@ class ProjectTreeNode {
           .toList();
     }
 
+    final rawSessionIds = json['sessionIds'];
+    List<String> idList = [];
+    if (rawSessionIds is List) {
+      idList = rawSessionIds.map((e) => e.toString()).toList();
+    }
+
     final isHome = json['isNoProject'] as bool? ?? (json['id'] == '__no_project__');
     final label = isHome ? 'DEFAULT HOME' : (json['label'] as String? ?? 'PROJECT');
 
@@ -86,6 +94,29 @@ class ProjectTreeNode {
       isNoProject: isHome,
       sessionCount: (json['sessionCount'] as num?)?.toInt() ?? sessionList.length,
       sessions: sessionList,
+      sessionIds: idList,
+    );
+  }
+
+  ProjectTreeNode copyWith({
+    String? id,
+    String? label,
+    String? path,
+    String? gitBranch,
+    bool? isNoProject,
+    int? sessionCount,
+    List<ProjectTreeSession>? sessions,
+    List<String>? sessionIds,
+  }) {
+    return ProjectTreeNode(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      path: path ?? this.path,
+      gitBranch: gitBranch ?? this.gitBranch,
+      isNoProject: isNoProject ?? this.isNoProject,
+      sessionCount: sessionCount ?? this.sessionCount,
+      sessions: sessions ?? this.sessions,
+      sessionIds: sessionIds ?? this.sessionIds,
     );
   }
 }

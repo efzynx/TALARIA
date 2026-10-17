@@ -97,9 +97,29 @@ class HermesRepository {
   }
 
   /// Retrieves the unified project tree from daemon (projects.tree)
-  Future<Map<String, dynamic>> getProjectsTree() async {
+  /// Uses a high previewLimit (default 200) so all session history per project is returned.
+  Future<Map<String, dynamic>> getProjectsTree({
+    int previewLimit = 200,
+    int sessionLimit = 2000,
+  }) async {
     try {
-      final response = await _client.call('projects.tree', {});
+      final response = await _client.call('projects.tree', {
+        'preview_limit': previewLimit,
+        'session_limit': sessionLimit,
+      });
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  /// Retrieves fully hydrated sessions for a specific project
+  Future<Map<String, dynamic>> getProjectSessions(String projectId) async {
+    try {
+      final response = await _client.call('projects.project_sessions', {
+        'project_id': projectId,
+      });
       if (response is Map) {
         return Map<String, dynamic>.from(response);
       }

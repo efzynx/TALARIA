@@ -5,7 +5,6 @@ import '../../core/network/connection_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/haptics.dart';
-import '../../data/models/hermes_account.dart';
 import '../../data/models/project_tree_node.dart';
 import '../../state/account_provider.dart';
 import '../../state/bots_provider.dart';
@@ -15,7 +14,6 @@ import '../../state/project_provider.dart';
 import '../../state/session_provider.dart';
 import '../navigation/app_shell.dart';
 import 'account_switcher_dialog.dart';
-import 'login_dialog.dart';
 
 class HermesSidebar extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
@@ -55,7 +53,6 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
   Widget build(BuildContext context) {
     final conn = ref.watch(connectionProvider);
     final accountState = ref.watch(accountProvider);
-    final activeAccount = accountState.activeAccount;
     final sessionState = ref.watch(sessionProvider);
     final projectState = ref.watch(projectProvider);
     final botsState = ref.watch(botsProvider);
@@ -118,9 +115,6 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                   ? _buildSessionsView(conn, accountState, sessionState, projectState)
                   : _buildBotsView(botsState),
             ),
-
-            // Active Connection / Gateway Card (Clean presentation with NO switch button)
-            _buildActiveGatewayCard(conn, activeAccount),
 
             // Bottom Profile Switcher Dock (Hermes Persona Badges)
             _buildProfileDock(botsState),
@@ -262,11 +256,30 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
           final isHome = node.isNoProject;
           final isCurrentActive = !isHome && projectState.activeProject?.id == node.id;
 
-          // Sessions belonging to this node
-          List<dynamic> nodeSessions = node.sessions;
-          if (nodeSessions.isEmpty && isHome) {
-            nodeSessions = allSessions;
+          // Fully hydrate all sessions for this project node:
+          // 1. Gather sessions from projects.tree (previewSessions / sessions)
+          final Map<String, dynamic> sessionMap = {};
+          for (final s in node.sessions) {
+            sessionMap[s.id] = s;
           }
+
+          // 2. Cross-reference with allSessions loaded from session.list
+          for (final s in allSessions) {
+            final belongsToNode = node.sessionIds.contains(s.id) ||
+                (isHome && (s.project == null || s.project!.isEmpty || s.project == '__no_project__')) ||
+                (!isHome && (s.project == node.id || s.project?.toLowerCase() == node.label.toLowerCase()));
+
+            if (belongsToNode && !sessionMap.containsKey(s.id)) {
+              sessionMap[s.id] = ProjectTreeSession(
+                id: s.id,
+                title: s.title,
+                messageCount: s.messageCount,
+                startedAt: s.createdAt,
+              );
+            }
+          }
+
+          List<dynamic> nodeSessions = sessionMap.values.toList();
 
           if (isSearching) {
             nodeSessions = nodeSessions.where((s) {
@@ -315,6 +328,20 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        // Session Count Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: AppSpacing.roundedSm,
+                          ),
+                          child: Text(
+                            '${nodeSessions.length}',
+                            style: AppTypography.mono(fontSize: 9, color: AppColors.textMuted),
                           ),
                         ),
 
@@ -663,86 +690,6 @@ class _HermesSidebarState extends ConsumerState<HermesSidebar> {
           );
         }),
       ],
-    );
-  }
-
-  /// Active Gateway / Connection Card (Clean card with NO switch button)
-  Widget _buildActiveGatewayCard(ConnectionStateData conn, HermesAccount? activeAccount) {
-    if (activeAccount == null) return const SizedBox.shrink();
-
-    final isAuthReq = conn.status == ConnectionStatus.unauthorized;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: isAuthReq ? AppColors.warn.withAlpha(20) : AppColors.background,
-        borderRadius: AppSpacing.roundedSm,
-        border: Border.all(
-          color: isAuthReq ? AppColors.warn : AppColors.border,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isAuthReq ? LucideIcons.lock : LucideIcons.server,
-            size: 15,
-            color: isAuthReq ? AppColors.warn : AppColors.primary,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activeAccount.name,
-                  style: AppTypography.mono(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isAuthReq ? AppColors.warn : AppColors.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  activeAccount.username != null && activeAccount.username!.isNotEmpty
-                      ? '${activeAccount.username} • ${activeAccount.serverUrl}'
-                      : activeAccount.serverUrl,
-                  style: AppTypography.mono(
-                    fontSize: 9,
-                    color: isAuthReq ? AppColors.warn : AppColors.textMuted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (isAuthReq)
-            InkWell(
-              onTap: () {
-                AppHaptics.light();
-                LoginDialog.show(context, initialServerUrl: activeAccount.serverUrl);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.warn.withAlpha(30),
-                  borderRadius: AppSpacing.roundedSm,
-                  border: Border.all(color: AppColors.warn),
-                ),
-                child: Text(
-                  'LOGIN',
-                  style: AppTypography.mono(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.warn,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 
